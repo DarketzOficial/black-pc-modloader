@@ -3,7 +3,7 @@
 **Modloader 1.0** para o **[BLACK PC port](https://github.com/Spark198rus/black-pc)** (de **Spark198rus**), o port que roda o `default.xbe` original do **BLACK** (Xbox) nativamente no Windows.
 
 Este repositório é o **código-fonte do modloader** (aberto, GPL-2.0-or-later). Os **mods** que acompanham o pacote
-(texturas HD, HUD, PT-BR, ícones…) são **fechados** e ficam no **[Releases](../../releases)** junto com o modloader
+(texturas HD, HUD, PT-BR, ícones…) e ficam no **[Releases](../../releases)** junto com o modloader
 pronto para instalar: é só extrair na pasta do port.
 
 ---
@@ -118,17 +118,11 @@ continua desligado nas próximas vezes.
 ## Texturas HD
 
 O mod de texturas HD troca, na hora de subir para a placa, as texturas do jogo pelas do pack **BLACK HD Reimagined**
-(feito para o BLACK de PlayStation 2). O casamento é **por conteúdo** (o port compara a textura do jogo com as do pack),
-então não depende de nome de arquivo.
+(feito para o BLACK de PlayStation 2). 
 
 Na linha **HD TEXTURES**, depois do **ON**, aparece o quanto do pack está pronto:
 
 > **`HD TEXTURES    ON 34%`**
-
-O número é: **texturas substituídas** (linhas do `mods\hdtextures\hd\map.csv`, hoje **53**) dividido pelas **texturas
-que o jogo usa na área que o pacote cobre** (`mods\hdtextures\hd\progress.txt`, hoje **156**). Para cobrir mais áreas é
-só coletar mais texturas (`mods\hdtextures\tools\dump_textures.bat`), rodar o casador e atualizar o `progress.txt` com
-o total novo — o resto se ajusta sozinho.
 
 ### Antes e depois
 
