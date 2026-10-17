@@ -1,0 +1,21 @@
+# build output
+/build/
+/out/
+/.vs/
+*.user
+*.suo
+*.pdb
+*.ilk
+*.obj
+*.exe
+*.dll
+
+# the port's own files, when the repo is used as a working folder
+/game/
+/savedata/
+/cache/
+/perf/
+/port/
+/work/
+/black.ini
+/black.log
