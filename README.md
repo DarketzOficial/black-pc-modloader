@@ -38,13 +38,10 @@ BLACK-XBERecomp.
    ```
 
 2. Baixe na aba [Releases](../../releases):
-   - **`BLACK-PC-Modloader-1.4.10.zip`** — loader/base para instalar;
-   - os pacotes de mods desejados (`mod-ptbr`, `mod-hdtextures`, etc.);
-   - **`black-pc-modloader.zip`** é o pacote pequeno usado pelo **atualizador** depois
-     que o launcher já está instalado.
-
-   O pacote `BLACK-PC-Modloader-1.4.10-com-mods.zip` é só para testes: ele já contém o
-   loader e todos os mods, sem o jogo.
+   - **`BLACK-PC-Modloader-1.4.10-com-mods.zip`** - pacote completo com o loader e todos
+     os mods (PT-BR, HD, icones e prompts), sem o jogo;
+   - **`black-pc-modloader.zip`** e o pacote pequeno usado pelo **atualizador** depois
+     que o launcher ja esta instalado.
 
 3. Feche o jogo. Extraia o conteúdo **dentro da pasta do port** (a que tem `black.exe`),
    confirmando a substituição de `blackrt.dll`.

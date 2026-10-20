@@ -33,7 +33,7 @@ Esta atualização organiza os logs do jogo e adiciona o relatório de erro do l
 ## Arquivos
 
 - Atualização do launcher: `black-pc-modloader.zip` (anexo).
-- Pacote base do loader: `BLACK-PC-Modloader-1.4.10.zip` (os mods PT-BR, HD etc. sao pacotes separados).
+- Pacote completo com mods: `BLACK-PC-Modloader-1.4.10-com-mods.zip` (ja inclui PT-BR, HD, icones e prompts).
 
 ## Compatibilidade
 
