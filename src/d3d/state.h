@@ -32,6 +32,10 @@ constexpr uint32_t VSH_MAGIC = 0x48535658;
 inline bool vs_is_fvf(uint32_t handle) { return (handle & 1) == 0; }
 inline VertexShader *vs_from_handle(uint32_t handle)
 {
+    // Real shader handles are (VertexShader * | 1), always odd. An even handle is an FVF code
+    // (e.g. 0x444 = XYZRHW | DIFFUSE | TEX1), not a pointer: dereferencing it read address 0x444
+    // and crashed the game when the level unloaded.
+    if (!handle || vs_is_fvf(handle)) return nullptr;
     auto *v = (VertexShader *)(uintptr_t)(handle & ~1u);
     return (v && v->magic == VSH_MAGIC) ? v : nullptr;
 }

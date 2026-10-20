@@ -7,7 +7,8 @@
 //   drop a flash bar at depths 9-21. The new row: depth 2, its own reveal at frame 58 with a bar at depth 22.
 //   PagePrepare / PageRelease / PageDestruct are renamed and wrapped: the wrappers add pcButton (BkMenuButton) to
 //   the up/down ring.
-// - pcsettings: a copy of Options; the four rows open the groups' pages, Back goes to Options instead of Options' own
+// - pcsettings: a copy of Options; the four rows open the groups' pages and a fifth the port's own MODS page,
+//   Back goes to Options instead of Options' own
 //   save-and-leave.
 // - a page per group and the KEY BINDINGS page: copies of Sound Setup (TextAnim char 49, six row slots revealed at
 //   frames 43-58). A choice row is a clone of the PLAY MODE row (char 25: label 24 > 23, value 22 > 21, arrows 19)
@@ -337,8 +338,7 @@ struct RowSpec {
 std::vector<RowSpec> group_rows(const pcset::Group &g, bool pause)
 {
     std::vector<RowSpec> out;
-    for (int n : g.rows) {
-        if (pause && pcset::restart_only(n)) continue; // applies at the next start: main menu only
+    for (int n : pcset::page_rows(g)) { // the rows the page has (a restart-only row is not one: pc_settings.cpp)
         std::string value = "&PC_V" + std::to_string(fevar::kValue + (int)out.size());
         if (const char *page = pcset::link(n)) out.push_back({RowSpec::Link, n, pcset::label(n), "", pause ? ingame(page) : page});
         else out.push_back({pcset::is_slider(n) ? RowSpec::Slider : RowSpec::Choice, n, pcset::label(n), value, ""});
@@ -501,11 +501,30 @@ void hover_block(Asm &f, const std::vector<std::string> &rows, const std::vector
         f.land(hidden);
         f.land(missing);
     }
-    var("pcOver")(f); // the row it put the focus on last: nothing to do while it is the same one
-    var("pcHover")(f);
-    f.equals2();
-    size_t same = f.branch(0x9D);
+    // The row under the pointer changed, or the port asked again (FEPCSnap: a click). In the first case the game's focus
+    // moves to the row (its own highlight and sound); in the second the row is only reported again, without moving the
+    // focus -- so a click acts on the row the pointer is on at the button down, never on the row from the update before
+    // the pointer moved there, and a page whose focus handler has a side effect is not triggered by a click that did not
+    // change rows.
+    let(f, "pcChanged", [&](Asm &g) { var("pcOver")(g); var("pcHover")(g); g.equals2().logical_not(); });
+    let(f, "pcSnap", [&](Asm &g) { pointer("FEPCSnap")(g); var("pcSnapLast")(g); g.equals2().logical_not(); });
+    var("pcChanged")(f);
+    size_t ask1 = f.branch(0x9D);
+    var("pcSnap")(f);
+    size_t ask2 = f.branch(0x9D);
+    size_t same = f.branch(0x99); // the same row and no snap: nothing to do
+    f.land(ask1);
+    f.land(ask2);
+    var("pcSnap")(f);
+    f.logical_not();
+    size_t no_snap = f.branch(0x9D);
+    let(f, "pcSnapLast", pointer("FEPCSnap")); // the snap is answered once
+    f.land(no_snap);
+    var("pcChanged")(f);
+    f.logical_not();
+    size_t no_move = f.branch(0x9D);
     let(f, "pcHover", var("pcOver")); // -1 (the pointer is elsewhere) matches no row: the focus stays where it was
+    f.land(no_move);
     var("pcOver")(f);
     f.push(Value::I(-1)).op(0x67).logical_not(); // pcOver <= -1: the pointer is on no row
     size_t norow = f.branch(0x9D);
@@ -513,10 +532,15 @@ void hover_block(Asm &f, const std::vector<std::string> &rows, const std::vector
         var("pcOver")(f);
         f.push(Value::I((int)i)).equals2().logical_not();
         size_t other = f.branch(0x9D);
+        // the game's focus only when the row changed: a snap alone reports the same row again
+        var("pcChanged")(f);
+        f.logical_not();
+        size_t snap_only = f.branch(0x9D);
         call(f, {"MyMenu"}, "SetFocusButton", {at({rows[i]})});
         at({"_global", "externObject", "FEFunctionTrigger"})(f); // a call is waiting: next update
         f.push(Value::I(1)).equals2();
         size_t busy = f.branch(0x9D);
+        f.land(snap_only);
         // The row, whether it carries a value list, and the setting it is with the row's middle as the packed third
         // parameter (fe/calls.cpp pc_hover): kPortBase + (id + 1) * kPackId + the middle * kPackW + the width. The
         // port asks a click's side against the middle when the button goes down (input/bindings.cpp menu_row), and a
@@ -600,6 +624,7 @@ void pc_step(Asm &f, bool grid)
     size_t no_clip = f.branch(0x9D);
     let(f, "pcArgClip", var("pcC"));
     let(f, "pcArgMem", S("_y"));
+    let(f, "pcArgScale", S("_yscale"));
     let(f, "pcRaw", call_value("pcPlace")); // the clip's registration point: the top of a row of text or of a key
     // half the gap between the first two rows the walk saw (measured on the tops: the same gap as on the middles)
     var("pcWN")(f);
@@ -640,6 +665,7 @@ void pc_step(Asm &f, bool grid)
     if (grid) {
         let(f, "pcArgClip", var("pcC"));
         let(f, "pcArgMem", S("_x"));
+        let(f, "pcArgScale", S("_xscale"));
         let(f, "pcMid", [&](Asm &g) {
             call_value("pcPlace")(g);
             var("pcC")(g);
@@ -727,7 +753,8 @@ void hover_walk(Asm &f, bool grid)
     let(f, "pcBestKey", I(0));
     let(f, "pcBestOwner", undef);
     let(f, "pcCode", I(-2));
-    let(f, "pcArgMem", S("_y")); // pc_place's member: the rows' lines are what this walk is after
+    let(f, "pcArgMem", S("_y")); // pc_place's member (and scale): the rows' lines are what this walk is after
+    let(f, "pcArgScale", S("_yscale"));
     const Path menus[2] = {{"MyMenu"}, {"Main", "ButtonSelector"}};
     // The walk's phases, each a chain of pc_step: down / up walk a column (the menu's own top-to-bottom order gives
     // the spacing). On a grid (the profile keyboard) two more phases walk a row with buttonLeft / buttonRight -- its
@@ -806,13 +833,17 @@ void hover_walk(Asm &f, bool grid)
     size_t has_half = f.branch(0x9D);
     set(f, {"_global"}, "pcHalf", I(12));
     f.land(has_half);
-    // off the rows (the nearest one is further than half a row away): the pointer is on no row
+    // Off the rows: the nearest one is further than a row away. The band is a full row gap, not half: a page whose rows
+    // are a few pixels off (their clips' registration differs from the row's middle -- PROFILE OPTIONS came out 15 px
+    // high on a 27 px row) found no row at all with half a gap, while a full gap still picks the nearest row and never
+    // two of them (the rows are a gap apart).
     var("pcBest")(f);
     f.push(Value::U()).equals2();
     size_t none = f.branch(0x9D);
     var("pcBestD2")(f);
-    var("pcHalf")(f);
-    var("pcHalf")(f);
+    let(f, "pcBand", [&](Asm &g) { var("pcHalf")(g); var("pcHalf")(g); g.add2(); });
+    var("pcBand")(f);
+    var("pcBand")(f);
     f.op(0x0C);
     f.op(0x67); // the row kept is further than the band
     f.logical_not();
@@ -833,11 +864,12 @@ void hover_walk(Asm &f, bool grid)
     set(f, {"_global"}, "pcGen", ptr("FEPCPage"));
     set(f, {"_global"}, "pcLast", S(""));
     f.land(new_page);
-    // The row under the cursor. The game's own highlight takes the focus when the row changes (so its reveal and its
-    // sound play once) and the port hears about the row then too: the row (or none), whether it carries a value and
-    // the row's middle packed as (id + 1) * 4096 + middle, which the port asks a click's side against when the button
-    // goes down (input/bindings.cpp menu_row). A row of the game's own has no setting of the port's (id -1), so its
-    // code is the middle itself.
+    // The row under the cursor changed, or the port asked again (FEPCSnap: a click). The game's own highlight takes the
+    // focus when the row changes (so its reveal and its sound play once); a snap only reports the same row again, with no
+    // focus move, so a click acts on the row the pointer is on at the button down and never on the row from the update
+    // before the pointer moved there. The row (or none), whether it carries a value and the row's middle are the report:
+    // the port asks a click's side against that middle when the button goes down (input/bindings.cpp menu_row). A row of
+    // the game's own has no setting of the port's (id -1), so its code is the middle itself.
     let(f, "pcName", S(""));
     var("pcBest")(f);
     f.push(Value::U()).equals2();
@@ -845,20 +877,39 @@ void hover_walk(Asm &f, bool grid)
     let(f, "pcC", [&](Asm &g) { var("pcBest")(g); g.push(Value::S("movieClip")).get_member(); });
     let(f, "pcName", [&](Asm &g) { var("pcC")(g); g.push(Value::S("_name")).get_member(); });
     f.land(no_row);
-    var("pcName")(f);
-    var("pcLast")(f);
-    f.equals2();
-    size_t same = f.branch(0x9D); // the same row (or still no row): the highlight and the port's row stay as they are
+    let(f, "pcChanged", [&](Asm &g) { var("pcName")(g); var("pcLast")(g); g.equals2().logical_not(); });
+    let(f, "pcSnap", [&](Asm &g) { ptr("FEPCSnap")(g); var("pcSnapLast")(g); g.equals2().logical_not(); });
+    var("pcChanged")(f);
+    size_t ask1 = f.branch(0x9D);
+    var("pcSnap")(f);
+    size_t ask2 = f.branch(0x9D);
+    size_t same = f.branch(0x99); // the same row and no snap: the highlight and the port's row stay as they are
+    f.land(ask1);
+    f.land(ask2);
+    var("pcSnap")(f);
+    f.logical_not();
+    size_t no_snap = f.branch(0x9D);
+    set(f, {"_global"}, "pcSnapLast", ptr("FEPCSnap")); // the snap is answered once
+    f.land(no_snap);
+    var("pcChanged")(f);
+    f.logical_not();
+    size_t no_change = f.branch(0x9D);
     set(f, {"_global"}, "pcLast", var("pcName"));
+    f.land(no_change);
     var("pcBest")(f);
     f.push(Value::U()).equals2();
     size_t no_focus = f.branch(0x9D);
+    var("pcChanged")(f); // a snap alone reports the same row again, without moving the focus
+    f.logical_not();
+    size_t snap_only = f.branch(0x9D);
     var("pcBest")(f);      // the button the menu is to focus: SetFocusButton wants the menu button object itself
     f.push(Value::I(1));   // (BkMenuButton, the one that carries buttonDown/buttonUp/mChoiceList), not its clip --
     var("pcBestOwner")(f); // with the clip the game's own ring of links came apart and the walk picked a different
     f.push(Value::S("SetFocusButton")).call_method().pop(); // row every other update
+    f.land(snap_only);
     let(f, "pcArgClip", var("pcC")); // pc_place wants the clip and the member: the row's left
     let(f, "pcArgMem", S("_x"));
+    let(f, "pcArgScale", S("_xscale"));
     let(f, "pcCode", [&](Asm &g) {
         call_value("pcPlace")(g);
         var("pcC")(g);
@@ -1133,7 +1184,7 @@ void add_menu_row(Movie &mv, uint32_t textanim, const std::string &label, const 
 
 void options_row(Movie &mv)
 {
-    add_menu_row(mv, mv.character(27), "PC SETTINGS", "PCSettings_Text", 25.9f, 55, 21, 22); // below the Profile row
+    add_menu_row(mv, mv.character(27), pcset::title(), "PCSettings_Text", 25.9f, 55, 21, 22); // below the Profile row
 
     uint32_t script = mv.main_script();
     for (const char *f : {"PagePrepare", "PageRelease", "PageDestruct", "Update"}) mv.rename_function(script, f, std::string(f) + "0");
@@ -1205,12 +1256,13 @@ void pc_menu(Movie &mv)
 {
     const auto &groups = pcset::groups();
     if (groups.size() != 4) throw Error("the PC SETTINGS menu has four rows");
-    literal(mv, mv.character(18), "PC SETTINGS");
+    literal(mv, mv.character(18), pcset::title());
     const int texts[4] = {14, 11, 8, 5}; // rows top to bottom: ControllerSetup, SoundSetup, PictureSetup, Playerprofile
     for (int i = 0; i < 4; i++) literal(mv, mv.character(texts[i]), groups[i].title);
-    // MODS: a fifth row below the four, opening the mods page (mods.h, pcset::mods_group). Same movie and same
-    // measurements as the "PC SETTINGS" row the port adds to the game's own Options page.
-    add_menu_row(mv, mv.character(27), "MODS", "Mods_Text", 25.9f, 55, 21, 22);
+    // MODS: a fifth row below the four, opening the port's own page (HUD 16:9, FADING HUD and the four image
+    // filters; pcset::mods_group). Same movie and same measurements as the "PC SETTINGS" row the port adds to the
+    // game's own Options page.
+    add_menu_row(mv, mv.character(27), pcset::mods_group().title, "Mods_Text", 25.9f, 55, 21, 22);
     mv.rename_function(mv.main_script(), "PagePrepare", "PagePrepare0");
     mv.rename_function(mv.main_script(), "Update", "Update0");
     Classes classes = own_classes_prepare(mv);
@@ -1396,7 +1448,7 @@ void pause_row(Movie &mv)
     uint32_t main_clip = mv.character(33);
     constexpr uint32_t kDepth = 97;
     require_free(mv, main_clip, kDepth);
-    int lt = mv.add_character(mv.clone_text(mv.character(18), "PC SETTINGS", "PC SETTINGS"));
+    int lt = mv.add_character(mv.clone_text(mv.character(18), pcset::title(), pcset::title()));
     int ls = mv.add_character(mv.clone_sprite(mv.character(19), {{18, lt}}));
     int row = mv.add_character(mv.clone_sprite(mv.character(20), {{19, ls}}));
     Bytes b = body(mv, mv.find_place(main_clip, 0, 85));
@@ -1728,7 +1780,7 @@ bool fe_build_pages(const std::wstring &game_dir, const std::wstring &out_root)
         Movie keys(sound);
         choice_page(keys, "KEY BINDINGS", key_rows(), controls, false, 100);
         add_movie(c, lower(kBindings), keys.build());
-        const pcset::Group &mg = pcset::mods_group(); // the MODS row on the PC SETTINGS page opens this one
+        const pcset::Group &mg = pcset::mods_group(); // the IMAGE row on the PC SETTINGS page opens this one
         Movie mods(sound);
         choice_page(mods, mg.title, group_rows(mg, false), "PCSettings", true, 4);
         add_movie(c, lower(mg.page), mods.build());

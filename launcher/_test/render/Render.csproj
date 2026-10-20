@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Dev tool: draws one launcher tab into a PNG, without opening a window. Used to look at a page
+       (its whole scroll length at once) while the launcher itself is left alone.
+
+       Use:  render.exe <portDir> <tab id> <out.png> [pt|en]
+       e.g.  render.exe D:\black-pc controls out.png pt          -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>render</AssemblyName>
+    <RootNamespace>BlackLauncher</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The launcher itself: its sections, its builder and its theme are what gets drawn. -->
+    <ProjectReference Include="..\..\BlackLauncher.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

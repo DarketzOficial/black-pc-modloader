@@ -10,6 +10,13 @@
 *.exe
 *.dll
 
+# launcher build output
+/launcher/bin/
+/launcher/obj/
+/launcher/.vs/
+/launcher/_test/**/bin/
+/launcher/_test/**/obj/
+
 # the port's own files, when the repo is used as a working folder
 /game/
 /savedata/

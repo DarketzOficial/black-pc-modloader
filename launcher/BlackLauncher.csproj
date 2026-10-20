@@ -1,0 +1,43 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>blacklauncher</AssemblyName>
+    <RootNamespace>BlackLauncher</RootNamespace>
+    <ApplicationIcon>Assets\favicon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>AnyCPU</Platforms>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Version>1.4.10</Version>
+    <Company>Darketz</Company>
+    <Product>BLACK PC Launcher</Product>
+    <AssemblyTitle>BLACK PC Launcher</AssemblyTitle>
+    <NeutralLanguage>pt-BR</NeutralLanguage>
+    <!-- the _test sandbox holds its own scratch projects: keep them out of this one -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);_test\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference assemblies for .NET Framework 4.8 so the build works without the VS targeting pack. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\qrcode.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The updater: GitHub's JSON (JavaScriptSerializer), the release zip and HTTPS. -->
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Runtime.Serialization" />
+  </ItemGroup>
+
+</Project>

@@ -1,4 +1,4 @@
-// HLE replacements for the Xbox D3D8 device API the game calls. Each function keeps the Xbox-side data
+﻿// HLE replacements for the Xbox D3D8 device API the game calls. Each function keeps the Xbox-side data
 // the game reads directly (device object fields, render/texture state arrays) up to date and drives the
 // host Direct3D 9 device.
 #include "d3d/device.h"
@@ -11,16 +11,21 @@
 #include "d3d/host.h"
 #include "d3d/nv2a_psh.h"
 #include "d3d/pshader.h"
+#include "d3d/smaa_shader.h"
+#include "d3d/smaa_textures.h"
 #include "perf.h"
 #include "d3d/pushbuf.h"
 #include "d3d/state.h"
 #include "d3d/subtitles.h"
 #include "audio/output.h"
 #include "fe/restart.h"
+#include "input/bindings.h"
 #include "input/movies.h"
 #include "d3d/vshader.h"
+#include "distance.h"
 #include "kernel/kexports.h"
-#include "timing.h"
+#include "frametime.h"
+#include "trainer.h"
 #include "xthread.h"
 
 #include <d3dcompiler.h>
@@ -37,6 +42,11 @@
 std::atomic<uint32_t> g_frame_count;
 
 namespace xd3d {
+
+std::atomic<uint32_t> g_present_tick; // the presentation clock (d3d/device.h)
+float g_world_vp[4][4];               // the frame's world camera (rows c10..c13 of the game's 3D draws)
+uint32_t g_world_vp_frame;            // g_frame_count + 1 of the frame it came from
+void pace_swap();                     // waits for the game's own vblank (defined below)
 
 uint8_t *g_dev;
 uint32_t *g_push_base;
@@ -82,6 +92,7 @@ IDirect3DPixelShader9 *g_zview_ps, *g_zfill_ps;
 enum class Owner : uint8_t { None, Color, Depth };
 std::unordered_map<uint64_t, Owner> g_owner;
 IDirect3DTexture9 *g_cur_rt; // host texture currently bound as render target
+IDirect3DTexture9 *g_cur_depth; // INTZ of the depth surface bound with it (null when there is none, or no INTZ)
 std::unordered_map<uint64_t, IDirect3DTexture9 *> g_snapshots; // copies for draws that sample their own target
 
 template <typename T> T &dev_field(uint32_t off) { return *(T *)(g_dev + off); }
@@ -257,7 +268,8 @@ IDirect3DPixelShader9 *compile_ps(const char *src, const char *name, const char 
 // scaling), else point-sample.
 void fullscreen_pass(IDirect3DPixelShader9 *ps, IDirect3DBaseTexture9 *src, IDirect3DSurface9 *color, IDirect3DSurface9 *depth,
                      uint32_t w, uint32_t h, bool write_depth, const float *c0 = nullptr, bool linear = false,
-                     const RECT *dst = nullptr, IDirect3DBaseTexture9 *src2 = nullptr)
+                     const RECT *dst = nullptr, IDirect3DBaseTexture9 *src2 = nullptr, IDirect3DBaseTexture9 *src3 = nullptr,
+                     bool blend = false, const float *crest = nullptr, int crest_n = 0, bool src3_linear = false)
 {
     IDirect3DDevice9 *d = host3d::dev();
     IDirect3DStateBlock9 *sb = nullptr;
@@ -270,6 +282,7 @@ void fullscreen_pass(IDirect3DPixelShader9 *ps, IDirect3DBaseTexture9 *src, IDir
     d->SetVertexShader(nullptr);
     d->SetPixelShader(ps);
     if (c0) d->SetPixelShaderConstantF(0, c0, 1);
+    if (crest) d->SetPixelShaderConstantF(1, crest, crest_n);
     d->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
     d->SetTexture(0, src);
     d->SetSamplerState(0, D3DSAMP_MINFILTER, linear ? D3DTEXF_LINEAR : D3DTEXF_POINT);
@@ -285,8 +298,23 @@ void fullscreen_pass(IDirect3DPixelShader9 *ps, IDirect3DBaseTexture9 *src, IDir
         d->SetSamplerState(1, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
         d->SetSamplerState(1, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
     }
-    for (D3DRENDERSTATETYPE rs : {D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_STENCILENABLE, D3DRS_FOGENABLE, D3DRS_SCISSORTESTENABLE})
+    if (src3) { // SMAA's search texture: point sampling between entries (the HDR glow: filtered)
+        d->SetTexture(2, src3);
+        d->SetSamplerState(2, D3DSAMP_MINFILTER, src3_linear ? D3DTEXF_LINEAR : D3DTEXF_POINT);
+        d->SetSamplerState(2, D3DSAMP_MAGFILTER, src3_linear ? D3DTEXF_LINEAR : D3DTEXF_POINT);
+        d->SetSamplerState(2, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        d->SetSamplerState(2, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+        d->SetSamplerState(2, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+    }
+    for (D3DRENDERSTATETYPE rs : {D3DRS_ALPHATESTENABLE, D3DRS_STENCILENABLE, D3DRS_FOGENABLE, D3DRS_SCISSORTESTENABLE})
         d->SetRenderState(rs, FALSE);
+    // blend: the pass' colour is a factor for what is already in the target (ambient occlusion), not a picture:
+    // dst = dst * src.a + src.rgb
+    d->SetRenderState(D3DRS_ALPHABLENDENABLE, blend ? TRUE : FALSE);
+    if (blend) {
+        d->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_ONE);
+        d->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_SRCALPHA);
+    }
     d->SetRenderState(D3DRS_ZENABLE, write_depth);
     d->SetRenderState(D3DRS_ZWRITEENABLE, write_depth);
     d->SetRenderState(D3DRS_ZFUNC, D3DCMP_ALWAYS);
@@ -306,6 +334,10 @@ void fullscreen_pass(IDirect3DPixelShader9 *ps, IDirect3DBaseTexture9 *src, IDir
         sb->Release();
     }
     forget_sent_shaders();
+    // The state block does not bring the vertex shader constants back (after the pass they read as zeros on the
+    // Radeon): the draw path's "the constants are still the ones I sent" cache must forget them, or the next
+    // draw that does not change them (a full-screen quad with only the viewport transform) collapses.
+    forget_vs_constants();
     if (old_rt) old_rt->Release();
     if (old_z) old_z->Release();
 }
@@ -326,7 +358,7 @@ void color_to_depth(IDirect3DTexture9 *color, HostZ &hz, uint32_t w, uint32_t h)
     IDirect3DTexture9 *dummy = scratch_rt(w, h);
     if (!g_zfill_ps || !dummy) return;
     IDirect3DSurface9 *ds = nullptr;
-    dummy->GetSurfaceLevel(0, &ds);
+    if (FAILED(dummy->GetSurfaceLevel(0, &ds))) return;
     fullscreen_pass(g_zfill_ps, color, ds, hz.surf, w, h, true);
     ds->Release();
 }
@@ -354,7 +386,7 @@ IDirect3DTexture9 *depth_view(uint64_t key, const HostZ &z, uint32_t w, uint32_t
     if (!view) host3d::dev()->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &view, nullptr);
     if (!g_zview_ps || !view) return nullptr;
     IDirect3DSurface9 *target = nullptr;
-    view->GetSurfaceLevel(0, &target);
+    if (FAILED(view->GetSurfaceLevel(0, &target))) return nullptr;
     fullscreen_pass(g_zview_ps, z.tex, target, nullptr, w, h, false);
     target->Release();
     return view;
@@ -364,17 +396,62 @@ IDirect3DTexture9 *depth_view(uint64_t key, const HostZ &z, uint32_t w, uint32_t
 // video DAC: BLACK's ramp builder (FUN_001762B0) computes ramp[i] = (i/255)^1.2 * (brightness + 1) * 2.2 *
 // tint * fade (the menu brightness, a colour tint and the fade factor, FUN_0015A8A0 = setFade), so the ramp
 // carries the screen fades and doubles the framebuffer brightness at the default setting. Then the user's
-// gain and gamma (F5-F8).
+// gain and gamma (F5-F8), and, when the HDR look is on, the glow, rolloff and saturation below.
 const char kGammaPS[] = "sampler2D f : register(s0);\n"
                         "sampler2D ramp : register(s1);\n" // 256x1: R/G/B = the red/green/blue ramps
-                        "float4 g : register(c0);\n"         // x = 1/gamma, y = gain
+                        "sampler2D glow : register(s2);\n" // HDR look: the blurred bright parts, at 1/8 the size
+                        "float4 g : register(c0);\n"         // x = 1/gamma, y = gain, z = HDR strength (0: off)
+                        "float4 h : register(c1);\n"         // x = knee, y = glow, z = saturation, w = exposure
+                        "float4 j : register(c2);\n"         // x = contrast (S-curve amount)
                         "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
                         "  float3 i = saturate(tex2D(f, uv).rgb) * (255.0 / 256.0) + 0.5 / 256.0;\n"
                         "  float3 c = float3(tex2D(ramp, float2(i.r, 0.5)).r, tex2D(ramp, float2(i.g, 0.5)).g, tex2D(ramp, float2(i.b, 0.5)).b);\n"
-                        "  return float4(pow(saturate(c * g.y), g.xxx), 1);\n"
+                        "  float3 x = c * g.y;\n"
+                        "  if (g.z > 0) {\n"
+                        "    x = x * h.w + tex2D(glow, uv).rgb * h.y;\n" // the glow is part of the HDR light, then the rolloff
+                        "    float3 over = max(x - h.x, 0);\n"
+                        "    x = min(x, h.x) + (1 - h.x) * (1 - exp(-over / (1 - h.x)));\n"
+                        "    x = lerp(x, x * x * (3 - 2 * x), j.x);\n"     // deepens the blacks against the haze
+                        "    float l = dot(x, float3(0.299, 0.587, 0.114));\n"
+                        "    x = lerp(float3(l, l, l), x, h.z);\n"
+                        "  }\n"
+                        "  return float4(pow(saturate(x), g.xxx), 1);\n"
                         "}\n";
 IDirect3DPixelShader9 *g_gamma_ps;
 IDirect3DTexture9 *g_ramp_tex;
+
+// Image filters (launcher VIDEO and PC SETTINGS > IMAGE): SHARPENING, DETAILS, CLARITY and VIBRANCE on the final
+// picture, after the gamma ramp and before the anti-aliasing, at the render resolution. One pass, and it is skipped
+// entirely while all four are 0. The taps are in render pixels: 1 px for the sharpening/detail unsharp mask and
+// 2 px for the clarity's local contrast.
+const char kFilterPS[] =
+    "sampler2D f : register(s0);\n"
+    "float4 px : register(c0);\n" // xy = 1 / size, zw = 2 / size
+    "float4 a : register(c1);\n"  // x = sharpening, y = details, z = clarity, w = vibrance (0..1)
+    "float L(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }\n"
+    "float3 tap(float2 uv, float2 o) { return tex2D(f, uv + o).rgb; }\n"
+    "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+    "  float3 c = tex2D(f, uv).rgb;\n"
+    "  float2 dx = float2(px.x, 0), dy = float2(0, px.y);\n"
+    "  float3 avg1 = 0.25 * (tap(uv, dx) + tap(uv, -dx) + tap(uv, dy) + tap(uv, -dy));\n"
+    "  float dl = L(c - avg1);\n" // luma only: a per-channel mask fringes the colours at strong edges
+    "  float y = L(c);\n"
+    "  float boost = (a.x + a.y * (1 - smoothstep(0.02, 0.20, abs(dl)))) * dl;\n" // sharpening + details
+    "  float2 ex = float2(px.z, 0), ey = float2(0, px.w);\n"
+    "  float3 avg2 = 0.25 * (tap(uv, ex) + tap(uv, -ex) + tap(uv, ey) + tap(uv, -ey));\n"
+    "  float lw = L(avg2);\n"
+    "  float mid = 1 - saturate(abs(y - 0.5) * 1.6);\n" // the midtones: no crushed blacks or blown highlights
+    "  boost += a.z * (y - lw) * mid;\n" // clarity: local contrast on luma, at a 2 px radius
+    // Add the boost as a scale of the colour instead of to each channel: a negative delta added to a dark
+    // blue shadow clips red and green at 0 first and leaves a blue fringe on every dark edge.
+    "  c *= clamp(max(y + boost, 0) / max(y, 1e-4), 0.25, 4.0);\n"
+    "  float l = L(c);\n"
+    "  float hi = max(c.r, max(c.g, c.b)), lo = min(c.r, min(c.g, c.b));\n"
+    "  float sat = (hi - lo) / max(hi, 1e-4);\n"
+    "  c = lerp(float3(l, l, l), c, 1 + a.w * (1 - sat));\n" // vibrance: the dull colours gain the most
+    "  return float4(saturate(c), 1);\n"
+    "}\n";
+IDirect3DPixelShader9 *g_filter_ps;
 
 // Anti-aliasing: an edge-directed post filter on the final picture (after the gamma ramp, at render
 // resolution, before the scale to the window), written for this project after the published FXAA idea.
@@ -433,7 +510,9 @@ const char kFxaaPS[] =
     "  return float4(range < max(0.0312, lMax * 0.125) ? cM : c, 1);\n" // no edge: leave the pixel alone
     "}\n";
 IDirect3DPixelShader9 *g_fxaa_ps;
-IDirect3DTexture9 *g_aa_tex[3]; // render-resolution intermediates: after the ramp, after the filter, seams filled
+IDirect3DTexture9 *g_aa_tex[8]; // render-resolution intermediates: after the ramp, after the filter, seams filled, SMAA
+                                // edges, SMAA weights, the HDR look's two 1/8-size glow targets, and the image
+                                // filters' full-size output
 
 IDirect3DTexture9 *aa_target(int i, uint32_t w, uint32_t h)
 {
@@ -502,24 +581,547 @@ IDirect3DTexture9 *ramp_texture()
     return g_ramp_tex;
 }
 
-void present_backbuffer()
+// ---- SMAA 1x (launcher VIDEO > ANTI-ALIASING > SMAA) ----
+// The reference shader (github.com/iryoku/smaa, vendored in smaa_shader.h) with its area and search lookup
+// textures (smaa_textures.h): luma edges into one target, blend weights from the edges and the lookups into
+// another, then the picture blended along the detected edges. It compiles for ps_3_0 through the shader's own
+// SMAA_HLSL_3 path. The recomp runs the same shader and lookups in its D3D12 backend.
+IDirect3DPixelShader9 *g_smaa_ps[3];
+IDirect3DTexture9 *g_smaa_area, *g_smaa_search;
+int g_smaa_state; // 0: untried, 1: ready, -1: unavailable (looked up once)
+
+IDirect3DTexture9 *smaa_lut(uint32_t w, uint32_t h, const uint8_t *data, bool two_channels)
+{
+    IDirect3DTexture9 *t = nullptr;
+    if (FAILED(host3d::dev()->CreateTexture(w, h, 1, 0, two_channels ? D3DFMT_A8L8 : D3DFMT_L8, D3DPOOL_MANAGED, &t, nullptr)))
+        return nullptr;
+    D3DLOCKED_RECT lr;
+    uint32_t stride = two_channels ? 2 : 1;
+    if (SUCCEEDED(t->LockRect(0, &lr, nullptr, 0))) {
+        for (uint32_t y = 0; y < h; y++)
+            memcpy((uint8_t *)lr.pBits + (size_t)y * lr.Pitch, data + (size_t)y * w * stride, (size_t)w * stride);
+        t->UnlockRect(0);
+    }
+    return t;
+}
+
+std::string smaa_source(int pass)
+{
+    std::string s = "sampler2D colorTex : register(s0);\nsampler2D areaTex : register(s1);\n"
+                    "sampler2D searchTex : register(s2);\nfloat4 metrics : register(c0);\n"
+                    "#define SMAA_HLSL_3 1\n"
+                    "#define SMAA_RT_METRICS metrics\n"
+                    "#define SMAA_THRESHOLD 0.05\n"
+                    "#define SMAA_MAX_SEARCH_STEPS 16\n"
+                    "#define SMAA_MAX_SEARCH_STEPS_DIAG 8\n"
+                    "#define SMAA_CORNER_ROUNDING 25\n"
+                    "#define SMAA_PASS " + std::to_string(pass) + "\n";
+    s += gpu::kSmaaHlsl;
+    s += "#if SMAA_PASS == 0\n"
+         "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+         "  float4 offsets[3];\n"
+         "  SMAAEdgeDetectionVS(uv, offsets);\n"
+         "  return float4(SMAALumaEdgeDetectionPS(uv, offsets, colorTex), 0, 0);\n"
+         "}\n"
+         "#elif SMAA_PASS == 1\n"
+         "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+         "  float2 pix; float4 offsets[3];\n"
+         "  SMAABlendingWeightCalculationVS(uv, pix, offsets);\n"
+         "  return SMAABlendingWeightCalculationPS(uv, pix, offsets, colorTex, areaTex, searchTex, float4(0, 0, 0, 0));\n"
+         "}\n"
+         "#else\n"
+         "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+         "  float4 o;\n"
+         "  SMAANeighborhoodBlendingVS(uv, o);\n"
+         "  return SMAANeighborhoodBlendingPS(uv, o, colorTex, areaTex);\n"
+         "}\n"
+         "#endif\n";
+    return s;
+}
+
+bool smaa_ready()
+{
+    if (g_smaa_state) return g_smaa_state > 0;
+    g_smaa_state = -1;
+    // smaa_textures.h: the area texture is 160 x 560 in two channels (R, G), the search 64 x 16 in one.
+    g_smaa_area = smaa_lut(160, 560, gpu::kSmaaArea, true);
+    g_smaa_search = smaa_lut(64, 16, gpu::kSmaaSearch, false);
+    if (!g_smaa_area || !g_smaa_search) {
+        logf("[d3d] SMAA: the lookup textures could not be created");
+        return false;
+    }
+    const char *names[3] = {"smaa-edges", "smaa-weights", "smaa-blend"};
+    for (int i = 0; i < 3; i++) {
+        std::string src = smaa_source(i);
+        g_smaa_ps[i] = compile_ps(src.c_str(), names[i], "ps_3_0");
+        if (!g_smaa_ps[i]) {
+            logf("[d3d] SMAA: the %s pass did not compile; anti-aliasing stays %s", names[i],
+                 g_cfg.aa == 2 ? "off" : "as it is");
+            return false;
+        }
+    }
+    g_smaa_state = 1;
+    logf("[d3d] SMAA 1x ready (threshold 0.05, 16 search steps, ps_3_0)");
+    return true;
+}
+
+// ---- ambient occlusion ----
+//
+// The recomp's own pass (src/game/ambient_occlusion.cpp hooks the frame at 0x1EE99F; d3d12.cpp's kAoHlsl draws
+// it): the game's camera-to-screen matrix turns the scene's depth buffer back into view space, a hemisphere of
+// samples around each pixel's normal darkens the picture where the geometry folds into itself, and a depth
+// weighted 5-tap blur evens the pattern out. The recomp runs it through its Clear-with-a-flag path; here it runs
+// where that hook is, before the frame's alpha list (the site at 0x1EE9A5 -- see ao.cpp), on the game's own
+// depth buffer read as INTZ and multiplied into the game's own target.
+//
+// Two things differ from the recomp, both for the sake of the GPU a 2004 game runs on today (see
+// data/PORT_SETTINGS.md):
+//
+//   * the samples run at a fraction of the render size (ao = 1: half, ao = 2: the render size). Occlusion is
+//     the lowest frequency thing in the picture; at the render size this pass costs several times the frame.
+//   * the recomp's pass also blends the fog the game has already drawn back over the occluded share of the
+//     pixel (its occlusion_apply), so a far surface fades into the fog instead of turning black. That is here
+//     too (the fog terms below come from the frame's own render states, as its LatchFog does).
+
+constexpr uint32_t kProjectionAddr = 0x297720; // camera to screen, the same address the recomp reads
+constexpr float kAoRadius = 0.8f;              // world units (the engine's are metres), as in the recomp
+constexpr float kAoMaxSpan = 0.15f;            // of the viewport height: the most one pixel's samples may cover
+constexpr float kAoStrength = 0.25f;           // of the recomp, at its 16 samples
+
+// AO_SAMPLES comes from the compile prefix (8 or 16).
+const char kAoPS[] =
+    "sampler2D z : register(s0);\n"
+    "float4 proj : register(c0);\n"  // 1 / the projection's x and y scale, then its x and y centre
+    "float4 zp : register(c1);\n"    // view z = zp.x / (depth - zp.y)
+    "float4 opt : register(c2);\n"   // world radius, most samples' pixels of the AO target, strength
+    "float4 map : register(c3);\n"   // x: 2 / the target width, y: -2 / its height, z: pixel of target per pixel of depth
+    "float4 fullp : register(c4);\n" // the depth target's size, then 1 / it
+    "float4 aop : register(c5);\n"   // the AO target's size, then 1 / it
+    // this pixel of the AO target (VPOS) as a pixel of the depth target: the AO may run at half size
+    "float2 DP(float2 p) { return clamp(p * map.z - (map.z - 1) * 0.5, 0.5, fullp.xy - 0.5); }\n"
+    "float Raw(float2 p) { return tex2D(z, DP(p) * fullp.zw).r; }\n"
+    "float3 ViewPos(float2 p) {\n"
+    "  float2 d = DP(p);\n"
+    "  float z = zp.x / (Raw(p) - zp.y);\n"
+    "  float2 ndc = d * map.xy + float2(-1, 1);\n"
+    "  return float3((ndc - proj.zw) * proj.xy * z, z);\n"
+    "}\n"
+    "float3 NormalAt(float2 pos, float3 c) {\n" // from the nearer neighbour each way: no bend over depth edges
+    "  float3 l = ViewPos(pos - float2(1, 0));\n"
+    "  float3 r = ViewPos(pos + float2(1, 0));\n"
+    "  float3 u = ViewPos(pos - float2(0, 1));\n"
+    "  float3 d = ViewPos(pos + float2(0, 1));\n"
+    "  float3 dx = abs(r.z - c.z) < abs(c.z - l.z) ? r - c : c - l;\n"
+    "  float3 dy = abs(d.z - c.z) < abs(c.z - u.z) ? d - c : c - u;\n"
+    "  return normalize(cross(dx, dy));\n"
+    "}\n"
+    "float4 main(float2 uv : TEXCOORD0, float2 pos : VPOS) : COLOR0 {\n"
+    "  float3 c = ViewPos(pos);\n"
+    "  float2 rad = opt.x * 0.5 * aop.xy / (proj.xy * c.z);\n"
+    "  float span = max(rad.x, rad.y);\n"
+    "  if (span < 1) return float4(1, c.z, 0, 1);\n"
+    "  float3 n = NormalAt(pos, c);\n"
+    "  float k = min(1, opt.y / span);\n"
+    "  float R = opt.x * k;\n"
+    "  float turn = floor(frac(sin(dot(pos, float2(12.9898, 78.233))) * 43758.5453) * 16) * 0.3926991;\n"
+    "  float a = 0;\n"
+    "  for (int i = 0; i < AO_SAMPLES; i++) {\n"
+    "    float f = (i + 0.5) / AO_SAMPLES;\n"
+    "    float t = i * 2.3999632 + turn;\n"
+    "    float3 v = (ViewPos(pos + float2(cos(t), sin(t)) * rad * (k * f)) - c) / R;\n"
+    "    float vv = dot(v, v);\n"
+    "    float w = max(1 - vv, 0);\n"
+    "    a += w * w * w * max((dot(v, n) - 0.05) / (vv + 0.01), 0);\n"
+    "  }\n"
+    "  return float4(max(1 - a * opt.z, 0), c.z, 0, 1);\n"
+    "}\n";
+
+// 5 taps along one axis average the 4 pixel dither; depth edges are left out (the recomp's Smooth).
+const char kAoBlurPS[] =
+    "sampler2D a : register(s0);\n"
+    "float4 vp : register(c0);\n"
+    "float4 px : register(c1);\n"
+    "float4 st : register(c2);\n"
+    "float4 main(float2 uv : TEXCOORD0, float2 pos : VPOS) : COLOR0 {\n"
+    "  float2 lo = vp.xy + 0.5, hi = vp.xy + vp.zw - 0.5;\n"
+    "  float2 p = clamp(pos, lo, hi);\n"
+    "  float z = tex2D(a, p * px.xy).g;\n"
+    "  float sum = 0, n = 0;\n"
+    "  for (int i = -2; i <= 2; i++) {\n"
+    "    float4 s = tex2D(a, clamp(p + i * st.xy, lo, hi) * px.xy);\n"
+    "    float w = (abs(i) == 2 ? 0.5 : 1.0) * saturate(2 - abs(s.g - z) / (z * 0.02));\n"
+    "    sum += s.r * w;\n"
+    "    n += w;\n"
+    "  }\n"
+    "  float v = sum / n;\n"
+    "  return float4(v, z, 0, 1);\n" // the view z rides along: the next pass weighs by it, the apply fogs by it
+    "}\n";
+
+// The last step, over the game's own target: read the blurred visibility (the sampler filters it, so a
+// half-size pass is smoothed on the way up), and blend. The fog the game already draws goes back over the
+// occluded share of the pixel (the recomp's occlusion_apply): what it sees there is fog, not black.
+const char kAoApplyPS[] =
+    "sampler2D a : register(s0);\n"
+    "float4 aop : register(c0);\n"    // the AO target's size, then 1 / it
+    "float4 map : register(c1);\n"    // x: pixel of target per pixel of AO target (1 or 2)
+    "float4 fog : register(c2);\n"    // slope, offset, most: min(saturate(slope * z + offset), most)
+    "float4 fogcol : register(c3);\n"
+    "float4 main(float2 uv : TEXCOORD0, float2 pos : VPOS) : COLOR0 {\n"
+    "  float4 s = tex2D(a, ((pos + 0.5) / map.x) * aop.zw);\n"
+    "  float v = s.r, z = s.g;\n"
+    "  float fogged = min(saturate(fog.x * z + fog.y), fog.z);\n"
+    "  return float4(fogcol.rgb * fogged * (1 - v), v);\n"
+    "}\n";
+
+IDirect3DPixelShader9 *g_ao_ps[2]; // 8 samples, 16 samples
+IDirect3DPixelShader9 *g_ao_blur_ps, *g_ao_apply_ps;
+IDirect3DTexture9 *g_ao_tex[2];
+uint32_t g_ao_w, g_ao_h;
+int g_ao_fail; // 0: not tried, 1: the shader, 2: the memory
+
+// The two targets hold the visibility in .r and the view z in .g, which is what the blur weighs its neighbours
+// by: a float target, so a wall 20 m away still tells itself from a character at 5 m (8 bits would clamp every
+// distance past a metre to the same value). Falls back to A8R8G8B8 where the device has no A16B16G16R16F.
+D3DFORMAT g_ao_fmt = D3DFMT_A16B16G16R16F;
+bool g_ao_told;
+
+IDirect3DTexture9 *ao_target(int i, uint32_t w, uint32_t h)
+{
+    if (g_ao_w != w || g_ao_h != h) {
+        for (IDirect3DTexture9 *&t : g_ao_tex) {
+            if (t) t->Release();
+            t = nullptr;
+        }
+        g_ao_w = w;
+        g_ao_h = h;
+    }
+    if (!g_ao_tex[i]) {
+        if (FAILED(host3d::dev()->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, g_ao_fmt, D3DPOOL_DEFAULT, &g_ao_tex[i], nullptr)) &&
+            g_ao_fmt != D3DFMT_A8R8G8B8) {
+            logf("[d3d] ambient occlusion: no %ux%u %08x target, using 8 bits per channel", w, h, (unsigned)g_ao_fmt);
+            g_ao_fmt = D3DFMT_A8R8G8B8;
+            host3d::dev()->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, g_ao_fmt, D3DPOOL_DEFAULT, &g_ao_tex[i], nullptr);
+        }
+    }
+    return g_ao_tex[i];
+}
+
+} // namespace
+
+// The game's gamma ramp applied to an 8-bit colour. The fog a shader writes is shown through the video DAC's ramp,
+// so the port's own dense fog (draw distance below 1x) needs the ramped colour: the level's fog colour at the
+// brightness the player is meant to see.
+uint32_t ramp_color(uint32_t c)
+{
+    static bool valid;
+    uint8_t ramp[768];
+    if (!valid && g_cfg.ramp)
+        valid = dev_field<uint32_t>(DEV_GAMMA_DIRTY) || dev_field<uint32_t>(DEV_GAMMA_DIRTY + 4);
+    if (valid) {
+        uint32_t idx = dev_field<uint32_t>(DEV_GAMMA_INDEX) & 1;
+        memcpy(ramp, g_dev + DEV_GAMMA_RAMP + idx * 0x300, sizeof ramp);
+    } else {
+        for (int i = 0; i < 256; i++) ramp[i] = ramp[256 + i] = ramp[512 + i] = (uint8_t)i;
+    }
+    return 0xFF000000u | (uint32_t)ramp[(c >> 16) & 0xFF] << 16 | (uint32_t)ramp[256 + ((c >> 8) & 0xFF)] << 8 |
+           ramp[c & 0xFF];
+}
+
+// Called from the trampoline at the frame's draw list point (the recomp's AmbientOcclusion hook), once a frame.
+void ambient_occlusion()
+{
+    if (!g_cfg.ao || g_ao_fail) return;
+    if (!g_cur_depth || !g_cur_rt) return;
+    IDirect3DDevice9 *d = host3d::dev();
+    HostRT &main = host_rt(g_backbuffer);
+    if (g_cur_rt != main.tex) return; // the frame's own scene, not one of the small post-processing buffers
+    const float *m = (const float *)(uintptr_t)kProjectionAddr;
+    if (m[11] != 1.0f || m[15] != 0.0f || !m[0] || !m[5]) return; // not a perspective camera this frame
+    if (!g_ao_blur_ps) {
+        g_ao_blur_ps = compile_ps(kAoBlurPS, "ao-blur", "ps_3_0");
+        g_ao_apply_ps = compile_ps(kAoApplyPS, "ao-apply", "ps_3_0");
+        if (!g_ao_blur_ps || !g_ao_apply_ps) {
+            g_ao_fail = 1;
+            logf("[d3d] ambient occlusion: the shader did not compile (ps_3_0); the setting does nothing");
+            return;
+        }
+    }
+    // ao: 1 runs at half the render size with 8 samples, 2 at the render size with the recomp's 16 (--ao).
+    // g_cfg.ao_div / g_cfg.ao_samples are the test hooks (press-file "aodbg:").
+    int div = g_cfg.ao_div >= 1 && g_cfg.ao_div <= 8 ? g_cfg.ao_div : (g_cfg.ao >= 2 ? 1 : 2);
+    int samples = g_cfg.ao_samples == 16 ? 16 : g_cfg.ao_samples == 8 ? 8 : (g_cfg.ao >= 2 ? 16 : 8);
+    int si = samples >= 16 ? 1 : 0;
+    if (!g_ao_ps[si]) {
+        std::string src = "#define AO_SAMPLES " + std::to_string(samples) + "\n";
+        src += kAoPS;
+        g_ao_ps[si] = compile_ps(src.c_str(), si ? "ao-16" : "ao-8", "ps_3_0");
+        if (!g_ao_ps[si]) {
+            g_ao_fail = 1;
+            logf("[d3d] ambient occlusion: the shader did not compile (ps_3_0); the setting does nothing");
+            return;
+        }
+    }
+    D3DSURFACE_DESC desc;
+    if (FAILED(g_cur_rt->GetLevelDesc(0, &desc))) return;
+    uint32_t w = desc.Width, h = desc.Height;
+    uint32_t aw = (uint32_t)div <= w ? (uint32_t)(w / div) : w, ah = (uint32_t)div <= h ? (uint32_t)(h / div) : h;
+    IDirect3DTexture9 *t0 = ao_target(0, aw, ah), *t1 = ao_target(1, aw, ah);
+    if (!t0 || !t1) {
+        g_ao_fail = 2;
+        logf("[d3d] ambient occlusion: no memory for the %ux%u targets; the setting does nothing", aw, ah);
+        return;
+    }
+    D3DVIEWPORT9 v;
+    if (FAILED(d->GetViewport(&v)) || !v.Width || !v.Height) return;
+    float zr = v.MaxZ - v.MinZ;
+    // the fog the frame is drawn with (the recomp's LatchFog/FogOverDepth): table fog, linear table. Without it
+    // the terms stay zero and the pass is a plain multiply by the visibility.
+    const uint32_t *rs = render_state();
+    float fs = 0, fe = 0, flimit = g_st.vs_constants[18][2];
+    memcpy(&fs, &rs[XRS_FOGSTART], 4);
+    memcpy(&fe, &rs[XRS_FOGEND], 4);
+    bool port_fog = false;
+    if (float end = trainer::in_level() ? distance_fog_end() : 0.0f; end > 0) { // the port's fog (draw.cpp)
+        fs = end * 0.35f;
+        fe = end;
+        flimit = end;
+        port_fog = true;
+    } else if (float fsc = distance_fog_scale(); fsc != 1.0f) {
+        fs *= fsc;
+        fe *= fsc;
+        flimit *= fsc;
+    }
+    uint32_t fogc = rs[XRS_FOGCOLOR];
+    float range = fe - fs;
+    float fog[4] = {0, 0, 0, 0}, fogcol[4] = {0, 0, 0, 0};
+    if ((rs[XRS_FOGENABLE] || port_fog) && (port_fog || rs[XRS_FOGTABLEMODE] == 3) && range > 0) {
+        fog[0] = m[10] / range;
+        fog[1] = (m[14] - fs) / range;
+        fog[2] = std::clamp((flimit - fs) / range, 0.0f, 1.0f);
+        fogcol[0] = ((fogc >> 16) & 0xFF) / 255.0f;
+        fogcol[1] = ((fogc >> 8) & 0xFF) / 255.0f;
+        fogcol[2] = (fogc & 0xFF) / 255.0f;
+    }
+    float c0[4] = {1.0f / m[0], 1.0f / m[5], m[8], m[9]};
+    float more[20] = {m[14] * zr, v.MinZ + m[10] * zr, 0, 0,                                  // c1: zp
+                      kAoRadius, kAoMaxSpan * (float)ah, kAoStrength * (16.0f / samples), 0,   // c2: opt
+                      2.0f / w, -2.0f / h, (float)div, 0,                                     // c3: map
+                      (float)w, (float)h, 1.0f / w, 1.0f / h,                                 // c4: the depth target
+                      (float)aw, (float)ah, 1.0f / aw, 1.0f / ah};                            // c5: the AO target
+    float aovp[4] = {0, 0, (float)aw, (float)ah};
+    float blur_x[8] = {1.0f / aw, 1.0f / ah, (float)aw, (float)ah, 1, 0, 0, 0}; // c1: px, c2: the step
+    float blur_y[8] = {1.0f / aw, 1.0f / ah, (float)aw, (float)ah, 0, 1, 0, 0};
+    float aop[4] = {(float)aw, (float)ah, 1.0f / aw, 1.0f / ah};               // the apply pass' c0
+    float apply[12] = {(float)div, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};          // c1: map, c2: fog, c3: fog colour
+    memcpy(apply + 4, fog, sizeof fog);
+    memcpy(apply + 8, fogcol, sizeof fogcol);
+    IDirect3DSurface9 *a0 = nullptr, *a1 = nullptr, *rt = nullptr;
+    t0->GetSurfaceLevel(0, &a0);
+    t1->GetSurfaceLevel(0, &a1);
+    g_cur_rt->GetSurfaceLevel(0, &rt);
+    if (!a0 || !a1 || !rt) {
+        if (a0) a0->Release();
+        if (a1) a1->Release();
+        if (rt) rt->Release();
+        return;
+    }
+    fullscreen_pass(g_ao_ps[si], g_cur_depth, a0, nullptr, aw, ah, false, c0, false, nullptr, nullptr, nullptr, false, more, 5);
+    fullscreen_pass(g_ao_blur_ps, t0, a1, nullptr, aw, ah, false, aovp, false, nullptr, nullptr, nullptr, false, blur_x, 2);
+    fullscreen_pass(g_ao_blur_ps, t1, a0, nullptr, aw, ah, false, aovp, false, nullptr, nullptr, nullptr, false, blur_y, 2);
+    fullscreen_pass(g_ao_apply_ps, t0, rt, nullptr, w, h, false, aop, div > 1, nullptr, nullptr, nullptr, true, apply, 3);
+    if (!g_ao_told) {
+        g_ao_told = true;
+        bool filter = true;
+        IDirect3D9 *d3d = Direct3DCreate9(D3D_SDK_VERSION);
+        if (d3d) {
+            D3DCAPS9 caps = {};
+            if (SUCCEEDED(d3d->GetDeviceCaps(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, &caps)))
+                filter = SUCCEEDED(d3d->CheckDeviceFormat(caps.AdapterOrdinal, caps.DeviceType, D3DFMT_X8R8G8B8,
+                                                          D3DUSAGE_QUERY_FILTER, D3DRTYPE_TEXTURE, g_ao_fmt));
+            d3d->Release();
+        }
+        logf("[d3d] ambient occlusion: %ux%u (of %ux%u, 1/%d), %d samples, %08x targets (filtered: %s), projection %.4f %.4f, "
+             "view z %.4f / (depth - %.6f), fog start %.2f end %.2f (slope %.4f offset %.4f most %.3f)",
+             aw, ah, w, h, div, samples, (unsigned)g_ao_fmt, filter ? "yes" : "no", 1 / m[0], 1 / m[5], (double)more[0],
+             (double)more[1], (double)fs, (double)fe, (double)fog[0], (double)fog[1], (double)fog[2]);
+    }
+    a0->Release();
+    a1->Release();
+    rt->Release();
+}
+
+namespace {
+
+// ---- HDR look (launcher VIDEO > HDR) ----
+// BLACK's picture is already display-referred: the game's gamma ramp (the Xbox's video DAC) maps the
+// framebuffer up and clips at white. So this is a look on the final picture, not a new colour pipeline: the
+// bright parts are blurred into a small glow that is added back as light, the highlights above a knee roll
+// off instead of clipping, and the colour is given a little more body (see kGammaPS, fused into the same
+// pass). The glow is built from the ramped picture, so the menus' fades stay fades.
+const char kHdrBrightPS[] =
+    "sampler2D f : register(s0);\n"
+    "sampler2D ramp : register(s1);\n"
+    "float4 c : register(c0);\n" // x = the taps' source texel step, y = the threshold
+    "float3 lit(float2 uv) {\n"
+    "  float3 i = saturate(tex2D(f, uv).rgb) * (255.0 / 256.0) + 0.5 / 256.0;\n"
+    "  return float3(tex2D(ramp, float2(i.r, 0.5)).r, tex2D(ramp, float2(i.g, 0.5)).g, tex2D(ramp, float2(i.b, 0.5)).b);\n"
+    "}\n"
+    "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+    "  float2 o = c.xx;\n" // 4 filtered taps cover most of the 8x8 block each target texel stands for
+    "  float3 s = 0.25 * (lit(uv + float2(-o.x, -o.y)) + lit(uv + float2(o.x, -o.y)) +\n"
+    "                     lit(uv + float2(-o.x, o.y)) + lit(uv + float2(o.x, o.y)));\n"
+    "  float l = dot(s, float3(0.299, 0.587, 0.114));\n"
+    "  return float4(s * saturate((l - c.y) / max(l, 1e-4)), 1);\n" // soft knee: only what is over the threshold
+    "}\n";
+// A 5-tap gaussian with the taps between texels (the sampler does the rest): two passes, one per axis.
+const char kHdrBlurPS[] =
+    "sampler2D b : register(s0);\n"
+    "float4 px : register(c0);\n" // xy = 1/size, zw = the pass' axis
+    "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+    "  float2 s = px.zw * px.xy;\n"
+    "  float3 c = tex2D(b, uv).rgb * 0.2270270270;\n"
+    "  c += (tex2D(b, uv + s * 1.3846153846).rgb + tex2D(b, uv - s * 1.3846153846).rgb) * 0.3162162162;\n"
+    "  c += (tex2D(b, uv + s * 3.2307692308).rgb + tex2D(b, uv - s * 3.2307692308).rgb) * 0.0702702703;\n"
+    "  return float4(c, 1);\n"
+    "}\n";
+IDirect3DPixelShader9 *g_hdr_bright_ps, *g_hdr_blur_ps;
+int g_hdr_fail;
+
+// The glow target (1/8 the render size), or null. Two 8-bit intermediates from the AA pool, made on demand.
+IDirect3DTexture9 *hdr_bloom(IDirect3DTexture9 *src, IDirect3DTexture9 *ramp, uint32_t w, uint32_t h)
+{
+    if (g_hdr_fail) return nullptr;
+    if (!g_hdr_bright_ps) {
+        g_hdr_bright_ps = compile_ps(kHdrBrightPS, "hdr-bright", "ps_2_a");
+        g_hdr_blur_ps = compile_ps(kHdrBlurPS, "hdr-blur", "ps_2_a");
+        if (!g_hdr_bright_ps || !g_hdr_blur_ps) {
+            g_hdr_fail = 1;
+            logf("[d3d] HDR look: the shader did not compile (ps_2_a); the setting does nothing");
+            return nullptr;
+        }
+    }
+    uint32_t bw = std::max(1u, w / 8), bh = std::max(1u, h / 8);
+    IDirect3DTexture9 *t0 = aa_target(5, bw, bh), *t1 = aa_target(6, bw, bh);
+    IDirect3DSurface9 *s0 = nullptr, *s1 = nullptr;
+    if (!t0 || !t1 || FAILED(t0->GetSurfaceLevel(0, &s0)) || FAILED(t1->GetSurfaceLevel(0, &s1))) {
+        if (s0) s0->Release();
+        if (s1) s1->Release();
+        return nullptr;
+    }
+    float bright[4] = {2.5f / w, 0.62f, 0, 0}; // the threshold is in the ramped light the picture is shown in
+    fullscreen_pass(g_hdr_bright_ps, src, s0, nullptr, bw, bh, false, bright, true, nullptr, ramp);
+    float bx[4] = {1.0f / bw, 1.0f / bh, 1, 0};
+    fullscreen_pass(g_hdr_blur_ps, t0, s1, nullptr, bw, bh, false, bx, true);
+    float by[4] = {1.0f / bw, 1.0f / bh, 0, 1};
+    fullscreen_pass(g_hdr_blur_ps, t1, s0, nullptr, bw, bh, false, by, true);
+    s0->Release();
+    s1->Release();
+    return t0; // bright pass into t0, horizontal blur into t1, vertical blur back into t0
+}
+
+// Test hook (press-file "farz"): how far the frame's world geometry reaches, in view metres. Samples the frame's
+// depth into a 64x36 R32F target, reads it back and takes the farthest non-sky value. Used to calibrate the fog of
+// a short draw distance; it stalls the GPU waiting for the read, so it is not part of the frame.
+const char kFarZPS[] = "sampler2D z : register(s0);\n"
+                       "float4 t : register(c0);\n" // 1 / target size
+                       "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+                       "  float m = 0;\n"
+                       "  for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) {\n"
+                       "    float2 o = (float2(x, y) + 0.5) / 8.0 - 0.5;\n"
+                       "    float d = tex2D(z, uv + o * t.xy).r;\n"
+                       "    if (d < 0.9999) m = max(m, d);\n"
+                       "  }\n"
+                       "  return float4(m, 0, 0, 1);\n"
+                       "}\n";
+IDirect3DPixelShader9 *g_farz_ps;
+IDirect3DTexture9 *g_farz_tex;
+IDirect3DSurface9 *g_farz_sys;
+std::atomic<bool> g_farz_request{false};
+
+void log_far_z()
+{
+    if (!g_cur_depth) {
+        logf("[farz] no depth buffer this frame");
+        return;
+    }
+    IDirect3DDevice9 *d = host3d::dev();
+    if (!g_farz_ps) g_farz_ps = compile_ps(kFarZPS, "farz", "ps_2_a");
+    if (!g_farz_ps) return;
+    if (!g_farz_tex &&
+        FAILED(d->CreateTexture(64, 36, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_farz_tex, nullptr))) {
+        logf("[farz] no R32F target");
+        return;
+    }
+    if (!g_farz_sys && FAILED(d->CreateOffscreenPlainSurface(64, 36, D3DFMT_R32F, D3DPOOL_SYSTEMMEM, &g_farz_sys, nullptr)))
+        return;
+    IDirect3DSurface9 *rs = nullptr;
+    if (FAILED(g_farz_tex->GetSurfaceLevel(0, &rs))) return;
+    float c[4] = {1.0f / 64, 1.0f / 36, 0, 0};
+    host3d::end_scene();
+    fullscreen_pass(g_farz_ps, g_cur_depth, rs, nullptr, 64, 36, false, c, false);
+    HRESULT hr = d->GetRenderTargetData(rs, g_farz_sys);
+    rs->Release();
+    D3DLOCKED_RECT lr;
+    if (FAILED(hr) || FAILED(g_farz_sys->LockRect(&lr, nullptr, D3DLOCK_READONLY))) {
+        logf("[farz] readback failed 0x%08x", (unsigned)hr);
+        return;
+    }
+    float mx = 0;
+    for (int y = 0; y < 36; y++) {
+        const float *row = (const float *)((const uint8_t *)lr.pBits + (size_t)y * lr.Pitch);
+        for (int x = 0; x < 64; x++) mx = std::max(mx, row[x]);
+    }
+    g_farz_sys->UnlockRect();
+    float z = 0;
+    D3DVIEWPORT9 v;
+    const float *m = (const float *)(uintptr_t)kProjectionAddr;
+    if (SUCCEEDED(d->GetViewport(&v)) && m[11] == 1.0f && m[15] == 0.0f) {
+        float zr = v.MaxZ - v.MinZ, a = m[14] * zr, b = v.MinZ + m[10] * zr;
+        if (mx > 0 && mx < b) z = a / (mx - b); // geometry sits below the cleared 1.0; the sky/backdrop is the max
+    }
+    logf("[farz] farthest depth %.6f -> %.2f m (draw distance %.2f)", (double)mx, (double)z,
+         (double)g_cfg.draw_distance);
+}
+
+} // namespace
+
+void request_far_z() { g_farz_request = true; }
+
+namespace {
+
+void present_backbuffer(IDirect3DTexture9 *src_override = nullptr)
 {
     static float shown_gamma = -1.0f, shown_gain = -1.0f, shown_sens = -1.0f;
-    static int shown_aa = -1;
-    if (shown_gamma != g_cfg.gamma || shown_gain != g_cfg.gain || shown_sens != g_cfg.mouse_sens || shown_aa != (int)g_cfg.aa) {
+    static int shown_aa = -1, shown_hdr = -1, shown_filters = -1;
+    if (shown_gamma != g_cfg.gamma || shown_gain != g_cfg.gain || shown_sens != g_cfg.mouse_sens || shown_aa != (int)g_cfg.aa ||
+        shown_hdr != (g_cfg.hdr ? g_cfg.hdr_strength : 0)) {
         if (shown_aa < 0 && g_cfg.background) host3d::set_title("[AUTOMATED TEST, MUTED] BLACK");
         shown_gamma = g_cfg.gamma;
         shown_gain = g_cfg.gain;
         shown_sens = g_cfg.mouse_sens;
         shown_aa = g_cfg.aa;
-        logf("[d3d] mouse sensitivity %.2f, output gain %.1f, gamma %.1f, anti-aliasing %s", g_cfg.mouse_sens, g_cfg.gain,
-             g_cfg.gamma, g_cfg.aa ? "on" : "off");
+        shown_hdr = g_cfg.hdr ? g_cfg.hdr_strength : 0;
+        char hdr[32];
+        if (g_cfg.hdr) snprintf(hdr, sizeof hdr, "%d%%", g_cfg.hdr_strength);
+        else strcpy(hdr, "off");
+        logf("[d3d] mouse sensitivity %.2f, output gain %.1f, gamma %.1f, anti-aliasing %s, HDR %s", g_cfg.mouse_sens,
+             g_cfg.gain, g_cfg.gamma, g_cfg.aa == 2 ? "SMAA" : g_cfg.aa ? "on" : "off", hdr);
+    }
+    int filters = ((g_cfg.sharpen * 101 + g_cfg.details) * 101 + g_cfg.clarity) * 101 + g_cfg.vibrance;
+    if (filters != shown_filters) {
+        shown_filters = filters;
+        if (g_cfg.sharpen || g_cfg.details || g_cfg.clarity || g_cfg.vibrance)
+            logf("[d3d] image filters: sharpening %d, details %d, clarity %d, vibrance %d (0-100)", g_cfg.sharpen,
+                 g_cfg.details, g_cfg.clarity, g_cfg.vibrance);
+        else
+            logf("[d3d] image filters off");
     }
     HostRT &bb = host_rt(g_backbuffer);
     IDirect3DSurface9 *s = nullptr;
     if (FAILED(bb.tex->GetSurfaceLevel(0, &s))) return;
     host3d::end_scene();
-    if (!g_gamma_ps) g_gamma_ps = compile_ps(kGammaPS, "gamma");
+    if (g_farz_request.exchange(false)) log_far_z();
+    if (!g_gamma_ps) g_gamma_ps = compile_ps(kGammaPS, "gamma", "ps_2_a");
     IDirect3DTexture9 *ramp = ramp_texture();
     // The frame (Xbox size x render scale) is filtered into the window-sized part of the host back buffer,
     // at the game's aspect with black bars when the window's shape differs (fullscreen, maximised).
@@ -543,12 +1145,17 @@ void present_backbuffer()
     }
     if (pic.left > 0 || pic.top > 0 || pic.right < frame.right || pic.bottom < frame.bottom)
         host3d::dev()->ColorFill(g_host_backbuffer, &frame, 0);
-    if (g_cfg.aa && !g_fxaa_ps) {
-        g_fxaa_ps = compile_ps(kFxaaPS, "fxaa", "ps_2_a");
-        if (!g_fxaa_ps) g_cfg.aa = false;
+    int aa_mode = g_cfg.aa; // 0 off, 1 the edge-directed filter, 2 SMAA
+    if (aa_mode == 2 && !smaa_ready()) {
+        logf("[d3d] SMAA is not available: using the edge-directed filter instead");
+        aa_mode = 1;
     }
-    IDirect3DTexture9 *src = bb.tex; // the frame, with seams filled when that is on
-    if (g_cfg.seam_fill && g_main_z) {
+    if (aa_mode == 1 && !g_fxaa_ps) {
+        g_fxaa_ps = compile_ps(kFxaaPS, "fxaa", "ps_2_a");
+        if (!g_fxaa_ps) aa_mode = 0;
+    }
+    IDirect3DTexture9 *src = src_override ? src_override : bb.tex; // the frame, with seams filled when that is on
+    if (g_cfg.seam_fill && g_main_z && !src_override) {
         static bool tried;
         if (!g_seam_ps && !tried) {
             tried = true;
@@ -560,37 +1167,538 @@ void present_backbuffer()
         IDirect3DTexture9 *out = g_seam_ps && hz.tex ? aa_target(2, bb.w, bb.h) : nullptr;
         if (out) {
             IDirect3DSurface9 *so = nullptr;
-            out->GetSurfaceLevel(0, &so);
-            float px[4] = {1.0f / bb.w, 1.0f / bb.h, 0, 0};
-            fullscreen_pass(g_seam_ps, bb.tex, so, nullptr, bb.w, bb.h, false, px, false, nullptr, hz.tex);
-            so->Release();
-            src = out;
+            if (SUCCEEDED(out->GetSurfaceLevel(0, &so))) {
+                float px[4] = {1.0f / bb.w, 1.0f / bb.h, 0, 0};
+                fullscreen_pass(g_seam_ps, bb.tex, so, nullptr, bb.w, bb.h, false, px, false, nullptr, hz.tex);
+                so->Release();
+                src = out;
+            }
         }
     }
-    IDirect3DTexture9 *aa0 = g_cfg.aa ? aa_target(0, bb.w, bb.h) : nullptr, *aa1 = g_cfg.aa ? aa_target(1, bb.w, bb.h) : nullptr;
-    if (g_gamma_ps && ramp && aa0 && aa1) {
-        // ramp + gamma 1:1 into aa0, anti-alias 1:1 into aa1, then filter into the window
-        float c[4] = {1.0f / g_cfg.gamma, g_cfg.gain, 0, 0};
-        IDirect3DSurface9 *s0 = nullptr, *s1 = nullptr;
-        aa0->GetSurfaceLevel(0, &s0);
-        aa1->GetSurfaceLevel(0, &s1);
-        fullscreen_pass(g_gamma_ps, src, s0, nullptr, bb.w, bb.h, false, c, false, nullptr, ramp);
-        float r[4] = {1.0f / bb.w, 1.0f / bb.h, 0, 0};
-        fullscreen_pass(g_fxaa_ps, aa0, s1, nullptr, bb.w, bb.h, false, r, true);
-        host3d::dev()->StretchRect(s1, nullptr, g_host_backbuffer, &pic, D3DTEXF_LINEAR);
-        s0->Release();
-        s1->Release();
+    const bool want_filters = g_cfg.sharpen > 0 || g_cfg.details > 0 || g_cfg.clarity > 0 || g_cfg.vibrance > 0;
+    if (want_filters && !g_filter_ps) {
+        g_filter_ps = compile_ps(kFilterPS, "image filters", "ps_2_a");
+        if (!g_filter_ps) logf("[d3d] image filters: the shader did not compile (ps_2_a); the settings do nothing");
+    }
+    bool use_filters = want_filters && g_filter_ps;
+    // The gamma pass and the anti-aliasing share the two render-resolution targets. With the filters on and the
+    // anti-aliasing off only the first is used, plus the filter's own target; with both off none of them is made.
+    IDirect3DTexture9 *aa0 = (aa_mode || use_filters) ? aa_target(0, bb.w, bb.h) : nullptr;
+    IDirect3DTexture9 *aa1 = aa_mode ? aa_target(1, bb.w, bb.h) : nullptr;
+    IDirect3DTexture9 *filtered = use_filters ? aa_target(7, bb.w, bb.h) : nullptr;
+    if (use_filters && !filtered) use_filters = false;
+    // HDR look: the glow target comes from the ramped picture (so the fades are respected); the look itself is
+    // fused into the gamma pass below. hc is its c1: knee, glow, saturation, exposure, scaled by the setting.
+    int hdr = g_cfg.hdr && g_cfg.hdr_strength > 0 ? 1 : 0;
+    IDirect3DTexture9 *glow = hdr && g_gamma_ps && ramp ? hdr_bloom(src, ramp, bb.w, bb.h) : nullptr;
+    if (!glow) hdr = 0;
+    float hs = std::clamp(g_cfg.hdr_strength, 0, 100) / 100.0f;
+    float hc[8] = {0.85f, 1.4f * hs, 1.0f + 0.30f * hs, 1.0f + 0.10f * hs, // knee, glow, saturation, exposure
+                   0.20f * hs, 0, 0, 0};                                  // c2: contrast
+    IDirect3DSurface9 *s0 = nullptr, *s1 = nullptr, *fs = nullptr;
+    bool surfaces_ok = aa0 && SUCCEEDED(aa0->GetSurfaceLevel(0, &s0));
+    if (surfaces_ok && aa1) surfaces_ok = SUCCEEDED(aa1->GetSurfaceLevel(0, &s1));
+    if (surfaces_ok && use_filters) surfaces_ok = SUCCEEDED(filtered->GetSurfaceLevel(0, &fs));
+    if (!surfaces_ok) {
+        // A device that is lost can refuse the surface; then there is no render-resolution pair this frame and
+        // the plain pass below draws straight into the window (releasing a null surface would end the process).
+        if (s0) {
+            s0->Release();
+            s0 = nullptr;
+        }
+        if (s1) {
+            s1->Release();
+            s1 = nullptr;
+        }
+        if (fs) {
+            fs->Release();
+            fs = nullptr;
+        }
+        aa0 = aa1 = nullptr;
+        use_filters = false;
+    }
+    if (g_gamma_ps && ramp && s0) {
+        // ramp + gamma 1:1 into aa0, then the image filters, then the anti-aliasing, then into the window
+        float c[4] = {1.0f / g_cfg.gamma, g_cfg.gain, (float)hdr, 0};
+        fullscreen_pass(g_gamma_ps, src, s0, nullptr, bb.w, bb.h, false, c, false, nullptr, ramp, glow, false, hc, 2, true);
+        IDirect3DTexture9 *aa_src = aa0;
+        if (use_filters && fs) {
+            float fp[4] = {1.0f / bb.w, 1.0f / bb.h, 2.0f / bb.w, 2.0f / bb.h};
+            float fa[4] = {g_cfg.sharpen / 100.0f, g_cfg.details / 100.0f, g_cfg.clarity / 100.0f, g_cfg.vibrance / 100.0f};
+            fullscreen_pass(g_filter_ps, aa0, fs, nullptr, bb.w, bb.h, false, fp, false, nullptr, nullptr, nullptr, false, fa, 1, true);
+            aa_src = filtered;
+        }
+        float r[4] = {1.0f / bb.w, 1.0f / bb.h, (float)bb.w, (float)bb.h};
+        IDirect3DSurface9 *out = nullptr;
+        if (aa_mode == 2) {
+            // SMAA: edges from the frame, blend weights from the edges and the lookups, then the frame blended
+            IDirect3DTexture9 *edges = aa_target(3, bb.w, bb.h), *weights = aa_target(4, bb.w, bb.h);
+            IDirect3DSurface9 *se = nullptr, *sw = nullptr;
+            if (edges && weights && SUCCEEDED(edges->GetSurfaceLevel(0, &se)) && SUCCEEDED(weights->GetSurfaceLevel(0, &sw))) {
+                fullscreen_pass(g_smaa_ps[0], aa_src, se, nullptr, bb.w, bb.h, false, r);
+                fullscreen_pass(g_smaa_ps[1], edges, sw, nullptr, bb.w, bb.h, false, r, true, nullptr, g_smaa_area, g_smaa_search);
+                out = use_filters ? s0 : s1;
+                fullscreen_pass(g_smaa_ps[2], aa_src, out, nullptr, bb.w, bb.h, false, r, false, nullptr, weights);
+            }
+            if (se) se->Release();
+            if (sw) sw->Release();
+            if (!out) out = use_filters ? fs : s0; // the SMAA targets failed: show the frame it would have read
+        } else if (aa_mode == 1) {
+            float f[4] = {1.0f / bb.w, 1.0f / bb.h, 0, 0};
+            out = use_filters ? s0 : s1;
+            fullscreen_pass(g_fxaa_ps, aa_src, out, nullptr, bb.w, bb.h, false, f, true);
+        } else {
+            out = fs; // filters on, anti-aliasing off: the filter's own target
+        }
+        host3d::dev()->StretchRect(out, nullptr, g_host_backbuffer, &pic, D3DTEXF_LINEAR);
+        if (s0) s0->Release();
+        if (s1) s1->Release();
+        if (fs) fs->Release();
     } else if (g_gamma_ps && ramp) {
-        float c[4] = {1.0f / g_cfg.gamma, g_cfg.gain, 0, 0};
+        float c[4] = {1.0f / g_cfg.gamma, g_cfg.gain, (float)hdr, 0};
         fullscreen_pass(g_gamma_ps, src, g_host_backbuffer, nullptr, (uint32_t)frame.right, (uint32_t)frame.bottom, false, c,
-                        true, &pic, ramp);
+                        true, &pic, ramp, glow, false, hc, 2, true);
     } else {
         host3d::dev()->StretchRect(s, nullptr, g_host_backbuffer, &pic, D3DTEXF_LINEAR);
     }
     s->Release();
 }
 
-// A colour target that is never sampled (for passes that only write depth).
+// ---- frame generation ----
+//
+// The game keeps running at 60 fps (its world speed is the real one) and the port shows a generated frame between
+// two of its own on a 120 Hz display. The generated picture is a reprojection: every pixel's world position is
+// rebuilt from the current frame's depth (INTZ) and projected with a camera halfway between the previous frame's
+// and the current one. The colour comes from both real frames at the two ends of that motion. The generated frame
+// is therefore half a frame behind the game's, at a constant delay -- not a different speed.
+//
+// The camera matrix is the one the game uploads for its 3D draws (constants c10..c13, clip = position x VP; the
+// game's world vertex shaders multiply the position with those four rows). The presentation clock runs at 120 Hz
+// while the game's own vblank stays at 60: two presents per game frame, the generated one first.
+//
+// What does not move in screen space stays as it is: pixels with no geometry behind them (sky, cleared areas),
+// and pixels that are identical in both frames (the HUD, the counter, the crosshair, the gun at rest). Without
+// that, the HUD would be dragged along by the camera, since the depth behind it is the world's.
+HANDLE g_present_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+bool g_present_lost; // a Present failed with D3DERR_DEVICELOST (frame generation presents inside the swap)
+std::atomic<int> g_presents_shown{1}; // pictures the screen got in the last game frame (the fps counter shows this rate)
+
+struct GenState {
+    IDirect3DTexture9 *prev_color, *prev_depth, *cur_depth, *gen, *test_prev;
+    IDirect3DPixelShader9 *ps_depth, *ps_gen, *ps_debug;
+    uint32_t w, h;
+    bool has_prev;
+    float vp_prev[4][4];
+};
+GenState g_gen;
+
+// Pixels that must stay as the current frame has them (the HUD and the first-person weapon): the draw path marks
+// them here, and the generated frame keeps them from the current picture instead of dragging them with the camera.
+IDirect3DTexture9 *g_static_mask;
+uint32_t g_mask_w, g_mask_h;
+IDirect3DPixelShader9 *g_mask_ps;
+
+void release_gen();
+// The display's refresh rate in Hz (0 when the driver does not say).
+int display_hz()
+{
+    IDirect3DDevice9 *dev = host3d::dev();
+    D3DDISPLAYMODE m = {};
+    if (!dev || FAILED(dev->GetDisplayMode(0, &m))) return 0;
+    return (int)m.RefreshRate;
+}
+
+bool gen_clock()
+{
+    return false; // frame generation was removed: the game itself now runs at the unlocked rate
+}
+
+// One full-screen pass with up to five textures and shader constants (the state is restored afterwards).
+void gen_pass(IDirect3DPixelShader9 *ps, IDirect3DBaseTexture9 *t0, IDirect3DBaseTexture9 *t1, IDirect3DBaseTexture9 *t2,
+              IDirect3DBaseTexture9 *t3, IDirect3DBaseTexture9 *t4, IDirect3DSurface9 *dst, uint32_t w, uint32_t h,
+              const float *consts, int nconst)
+{
+    IDirect3DDevice9 *d = host3d::dev();
+    IDirect3DStateBlock9 *sb = nullptr;
+    d->CreateStateBlock(D3DSBT_ALL, &sb);
+    IDirect3DSurface9 *old_rt = nullptr, *old_z = nullptr;
+    d->GetRenderTarget(0, &old_rt);
+    d->GetDepthStencilSurface(&old_z);
+    d->SetRenderTarget(0, dst);
+    d->SetDepthStencilSurface(nullptr);
+    d->SetVertexShader(nullptr);
+    d->SetPixelShader(ps);
+    if (consts) d->SetPixelShaderConstantF(0, consts, nconst);
+    d->SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
+    IDirect3DBaseTexture9 *tex[5] = {t0, t1, t2, t3, t4};
+    for (int i = 0; i < 5; i++) {
+        d->SetTexture(i, tex[i]);
+        d->SetSamplerState(i, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+        d->SetSamplerState(i, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+        d->SetSamplerState(i, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+        d->SetSamplerState(i, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+        d->SetSamplerState(i, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+    }
+    for (D3DRENDERSTATETYPE rs : {D3DRS_ALPHABLENDENABLE, D3DRS_ALPHATESTENABLE, D3DRS_STENCILENABLE, D3DRS_FOGENABLE,
+                                  D3DRS_SCISSORTESTENABLE})
+        d->SetRenderState(rs, FALSE);
+    d->SetRenderState(D3DRS_ZENABLE, FALSE);
+    d->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    d->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    d->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    float x0 = -0.5f, y0 = -0.5f, x1 = (float)w - 0.5f, y1 = (float)h - 0.5f;
+    struct V {
+        float x, y, z, rhw, u, v;
+    } q[4] = {{x0, y0, 0, 1, 0, 0}, {x1, y0, 0, 1, 1, 0}, {x0, y1, 0, 1, 0, 1}, {x1, y1, 0, 1, 1, 1}};
+    host3d::begin_scene();
+    d->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, q, sizeof(V));
+    d->SetRenderTarget(0, old_rt);
+    d->SetDepthStencilSurface(old_z);
+    if (sb) {
+        sb->Apply();
+        sb->Release();
+    }
+    forget_sent_shaders();
+    forget_vs_constants(); // the state block does not bring the constants back (see fullscreen_pass)
+    if (old_rt) old_rt->Release();
+    if (old_z) old_z->Release();
+}
+
+// The depth of the frame just drawn, as a texture the next frame can read (R32F; one channel is enough).
+const char kGenDepthPS[] = "sampler2D z : register(s0);\n"
+                           "float4 main(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(z, uv).r; }\n";
+
+// The generated frame. s0/s1: the current colour and depth; s2/s3: the previous frame's; s4: the mask of what does
+// not move with the camera (HUD, first-person weapon). c0: the inverse of the halfway camera, c4: the current one,
+// c8: the previous one, c12: x/y = 1/size.
+const char kGenPS[] =
+    "sampler2D cur_c : register(s0);\n"
+    "sampler2D cur_z : register(s1);\n"
+    "sampler2D prv_c : register(s2);\n"
+    "sampler2D prv_z : register(s3);\n"
+    "sampler2D fixed : register(s4);\n"
+    "float4x4 inv_mid : register(c0);\n"
+    "float4x4 vp_cur : register(c4);\n"
+    "float4x4 vp_prv : register(c8);\n"
+    "float4 prm : register(c12);\n"
+    "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+    "  float4 c1 = tex2D(cur_c, uv);\n"
+    "  if (tex2D(fixed, uv).r > 0.5) return c1;\n" // the weapon: it does not move with the camera
+    "  float4 same = tex2D(prv_c, uv);\n"
+    "  float diff = max(max(abs(same.r - c1.r), abs(same.g - c1.g)), max(abs(same.b - c1.b), abs(same.a - c1.a)));\n"
+    "  if (diff < prm.z) return c1;\n" // unchanged between the two frames: the HUD, the counter, flat dark areas
+    "  float d = tex2D(cur_z, uv).r;\n"
+    "  float4 w4 = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0), inv_mid);\n"
+    "  float4 p = float4(w4.xyz / w4.w, 1.0);\n"
+    "  float4 k1 = mul(p, vp_cur), k0 = mul(p, vp_prv);\n"
+    "  if (k1.w < 1e-5 || k0.w < 1e-5) return c1;\n"
+    "  float2 u1 = float2(k1.x / k1.w * 0.5 + 0.5, 0.5 - k1.y / k1.w * 0.5);\n"
+    "  float2 u0 = float2(k0.x / k0.w * 0.5 + 0.5, 0.5 - k0.y / k0.w * 0.5);\n"
+    // visible at that end of the motion: that frame's depth buffer is not in front of the point (occlusion). It may
+    // be behind (a silhouette against the sky), which is fine.
+    "  float v1 = (tex2D(cur_z, u1).r >= k1.z / k1.w - 0.002) ? 1.0 : 0.0;\n"
+    "  float v0 = (tex2D(prv_z, u0).r >= k0.z / k0.w - 0.002) ? 1.0 : 0.0;\n"
+    "  if (v1 + v0 < 0.5) return c1;\n" // hidden in both ends of the motion: keep what is here
+    "  return (tex2D(cur_c, u1) * v1 + tex2D(prv_c, u0) * v0) / (v1 + v0);\n"
+    "}\n";
+
+// Tests (--framegen-debug N): the same reprojection, but the output shows what it computed: N=1 the depth the pass
+// reads, N=2 the motion towards the current frame, N=3 towards the previous one (grey = none, red/green = pixels).
+const char kGenDebugPS[] =
+    "sampler2D cur_c : register(s0);\n"
+    "sampler2D cur_z : register(s1);\n"
+    "sampler2D prv_c : register(s2);\n"
+    "sampler2D prv_z : register(s3);\n"
+    "float4x4 inv_mid : register(c0);\n"
+    "float4x4 vp_cur : register(c4);\n"
+    "float4x4 vp_prv : register(c8);\n"
+    "float4 prm : register(c12);\n"
+    "float4 main(float2 uv : TEXCOORD0) : COLOR0 {\n"
+    "  float d = tex2D(cur_z, uv).r;\n"
+    "  if (prm.z < 1.5) return float4(d, d, d, 1.0);\n"
+    "  float4 w4 = mul(float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, d, 1.0), inv_mid);\n"
+    "  float4 p = float4(w4.xyz / w4.w, 1.0);\n"
+    "  float4 k1 = mul(p, vp_cur), k0 = mul(p, vp_prv);\n"
+    "  float2 size = float2(1.0 / prm.x, 1.0 / prm.y);\n"
+    "  float2 m1 = float2(k1.x / k1.w * 0.5 + 0.5, 0.5 - k1.y / k1.w * 0.5) - uv;\n"
+    "  float2 m0 = float2(k0.x / k0.w * 0.5 + 0.5, 0.5 - k0.y / k0.w * 0.5) - uv;\n"
+    "  float v1 = (tex2D(cur_z, uv + m1).r >= k1.z / k1.w - 0.002) ? 1.0 : 0.0;\n"
+    "  float v0 = (tex2D(prv_z, uv + m0).r >= k0.z / k0.w - 0.002) ? 1.0 : 0.0;\n"
+    "  if (prm.z > 3.5 && prm.z < 4.5) return float4(v1, v0, 0.0, 1.0);\n" // 4: visible in each end
+    "  if (prm.z > 4.5) return float4(tex2D(prv_z, uv).r, tex2D(prv_z, uv).r, tex2D(prv_z, uv).r, 1.0);\n" // 5: the stored depth
+    "  float2 m = (prm.z < 2.5 ? m1 : m0) * size * 0.02;\n"
+    "  return float4(0.5 + m.x, 0.5 + m.y, saturate(abs(d) > 0.9995 ? 1.0 : 0.0), 1.0);\n"
+    "}\n";
+
+bool invert4x4(const float in[4][4], float out[4][4])
+{
+    float a[4][8];
+    for (int r = 0; r < 4; r++)
+        for (int c = 0; c < 4; c++) a[r][c] = in[r][c], a[r][c + 4] = r == c ? 1.0f : 0.0f;
+    for (int c = 0; c < 4; c++) {
+        int p = c;
+        for (int r = c + 1; r < 4; r++)
+            if (fabsf(a[r][c]) > fabsf(a[p][c])) p = r;
+        if (fabsf(a[p][c]) < 1e-9f) return false;
+        if (p != c)
+            for (int i = 0; i < 8; i++) std::swap(a[c][i], a[p][i]);
+        float k = 1.0f / a[c][c];
+        for (int i = 0; i < 8; i++) a[c][i] *= k;
+        for (int r = 0; r < 4; r++) {
+            if (r == c) continue;
+            float f = a[r][c];
+            for (int i = 0; i < 8; i++) a[r][i] -= f * a[c][i];
+        }
+    }
+    for (int r = 0; r < 4; r++)
+        for (int c = 0; c < 4; c++) out[r][c] = a[r][c + 4];
+    return true;
+}
+
+void release_gen();
+
+bool gen_alloc(uint32_t w, uint32_t h)
+{
+    if (g_gen.w == w && g_gen.h == h && g_gen.gen) return true;
+    release_gen();
+    IDirect3DDevice9 *d = host3d::dev();
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (attempt) w = std::max(8u, w / 2), h = std::max(8u, h / 2); // no memory at the render size: half is enough
+        if (FAILED(d->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_gen.prev_color, nullptr))) continue;
+        if (FAILED(d->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_gen.prev_depth, nullptr))) continue;
+        if (FAILED(d->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_R32F, D3DPOOL_DEFAULT, &g_gen.cur_depth, nullptr))) continue;
+        if (FAILED(d->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_gen.gen, nullptr))) continue;
+        if (!g_gen.ps_depth) g_gen.ps_depth = compile_ps(kGenDepthPS, "framegen depth", "ps_3_0");
+        if (!g_gen.ps_debug && g_cfg.frame_gen_debug) g_gen.ps_debug = compile_ps(kGenDebugPS, "framegen debug", "ps_3_0");
+        if (!g_gen.ps_gen) g_gen.ps_gen = compile_ps(kGenPS, "framegen", "ps_3_0");
+        if (!g_gen.ps_depth || !g_gen.ps_gen) continue;
+        g_gen.w = w;
+        g_gen.h = h;
+        g_gen.has_prev = false;
+        logf("[framegen] %ux%u targets ready%s", w, h, w != (uint32_t)host_w(g_width) ? " (at half the render size)" : "");
+        return true;
+    }
+    logf("[framegen] could not create the targets; the game presents at 60 fps");
+    release_gen();
+    return false;
+}
+
+void release_gen()
+{
+    for (IDirect3DTexture9 **t : {&g_gen.prev_color, &g_gen.prev_depth, &g_gen.cur_depth, &g_gen.gen, &g_gen.test_prev})
+        if (*t) {
+            (*t)->Release();
+            *t = nullptr;
+        }
+    g_gen.w = g_gen.h = 0;
+    g_gen.has_prev = false;
+}
+
+// The camera the game is rendering with, for the cut test (position and orientation in the renderer's camera).
+bool camera_state(float *pos, float *quat)
+{
+    uint32_t r = *(const uint32_t *)(uintptr_t)0x002D12B8;
+    if (!r) return false;
+    memcpy(pos, (const void *)(uintptr_t)(r + 0x770), 12);
+    memcpy(quat, (const void *)(uintptr_t)(r + 0x760), 16);
+    return true;
+}
+
+// Halfway between the previous frame's camera and the current one (the projection may change too: aiming zooms).
+void mid_matrix(float out[4][4])
+{
+    for (int r = 0; r < 4; r++)
+        for (int c = 0; c < 4; c++) out[r][c] = 0.5f * (g_gen.vp_prev[r][c] + g_world_vp[r][c]);
+}
+
+// Build the generated frame from the current picture and the previous one.
+bool build_gen_frame()
+{
+    HostRT &bb = host_rt(g_backbuffer);
+    if (!gen_alloc(bb.w, bb.h)) return false;
+    uint64_t zkey;
+    HostZ &hz = host_z(g_main_z, bb.xw, bb.xh, &zkey);
+    if (!hz.tex) return false;
+    D3DSURFACE_DESC zd;
+    hz.tex->GetLevelDesc(0, &zd);
+    if (zd.Width != g_gen.w || zd.Height != g_gen.h) {
+        static bool told;
+        if (!told) logf("[framegen] depth %ux%u and the frame %ux%u differ: off", zd.Width, zd.Height, g_gen.w, g_gen.h), told = true;
+        return false;
+    }
+    float mid[4][4], inv[4][4];
+    mid_matrix(mid);
+    if (!invert4x4(mid, inv)) return false;
+    float c[52] = {};
+    memcpy(c + 0, inv, 64);          // c0..c3: the halfway camera, inverted
+    memcpy(c + 16, g_world_vp, 64);  // c4..c7: the current camera
+    memcpy(c + 32, g_gen.vp_prev, 64); // c8..c11: the previous one
+    c[48] = 1.0f / (float)g_gen.w;
+    c[49] = 1.0f / (float)g_gen.h;
+    c[50] = 0.02f; // a pixel that did not change between the two frames: the HUD, flat dark areas
+    c[51] = 0.0f;
+    IDirect3DBaseTexture9 *depth_src = hz.tex;
+    IDirect3DBaseTexture9 *fixed = static_mask();
+    if (!fixed) return false;
+    IDirect3DPixelShader9 *ps = g_gen.ps_gen;
+    if (g_cfg.frame_gen_debug) { // tests: what the pass sees
+        ps = g_gen.ps_debug;
+        c[50] = (float)g_cfg.frame_gen_debug;
+        if (!ps) return false;
+    } else if (!ps) return false;
+    IDirect3DSurface9 *dst = nullptr;
+    g_gen.gen->GetSurfaceLevel(0, &dst);
+    host3d::end_scene();
+    gen_pass(ps, bb.tex, depth_src, g_gen.prev_color, g_gen.prev_depth, fixed, dst, g_gen.w, g_gen.h, c, 52);
+    dst->Release();
+    return true;
+}
+
+// Keep this frame for the next generated one: its picture, its depth and its camera.
+void save_prev()
+{
+    HostRT &bb = host_rt(g_backbuffer);
+    if (!gen_alloc(bb.w, bb.h)) return;
+    if (g_gen.w != bb.w || g_gen.h != bb.h) return;
+    IDirect3DSurface9 *a = nullptr, *b = nullptr;
+    bb.tex->GetSurfaceLevel(0, &a);
+    if (g_cfg.frame_gen_test) { // tests: keep the frame the generated one was made from (the dump compares them)
+        if (!g_gen.test_prev && FAILED(host3d::dev()->CreateTexture(g_gen.w, g_gen.h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8,
+                                                                   D3DPOOL_DEFAULT, &g_gen.test_prev, nullptr)))
+            g_gen.test_prev = nullptr;
+        IDirect3DSurface9 *t = nullptr;
+        if (g_gen.test_prev && SUCCEEDED(g_gen.prev_color->GetSurfaceLevel(0, &t))) {
+            IDirect3DSurface9 *d = nullptr;
+            if (SUCCEEDED(g_gen.test_prev->GetSurfaceLevel(0, &d))) {
+                host3d::end_scene();
+                host3d::dev()->StretchRect(t, nullptr, d, nullptr, D3DTEXF_NONE);
+                d->Release();
+            }
+            t->Release();
+        }
+    }
+    g_gen.prev_color->GetSurfaceLevel(0, &b);
+    host3d::end_scene();
+    host3d::dev()->StretchRect(a, nullptr, b, nullptr, D3DTEXF_NONE);
+    a->Release();
+    b->Release();
+    uint64_t zkey;
+    HostZ &hz = host_z(g_main_z, bb.xw, bb.xh, &zkey);
+    if (hz.tex) {
+        IDirect3DSurface9 *d = nullptr;
+        g_gen.cur_depth->GetSurfaceLevel(0, &d);
+        gen_pass(g_gen.ps_depth, hz.tex, nullptr, nullptr, nullptr, nullptr, d, g_gen.w, g_gen.h, nullptr, 0);
+        d->Release();
+        std::swap(g_gen.prev_depth, g_gen.cur_depth);
+    }
+    memcpy(g_gen.vp_prev, g_world_vp, sizeof g_gen.vp_prev);
+    g_gen.has_prev = true;
+}
+
+// Tests (--framegen-test): save the current frame, the previous one and the generated one, to compare the
+// interpolation by hand (PNG per texture).
+void dump_fg_frames(const char *tag)
+{
+    if (!g_cfg.frame_gen_test || !g_gen.gen || g_cfg.screenshot_dir.empty()) return;
+    std::wstring dir = g_cfg.screenshot_dir + L"\\";
+    auto save = [&](IDirect3DTexture9 *t, const char *what) {
+        if (!t) return;
+        IDirect3DSurface9 *s = nullptr;
+        if (FAILED(t->GetSurfaceLevel(0, &s))) return;
+        save_surface_png(s, (dir + widen(std::string("fgboth_") + what + "_" + tag) + L".png").c_str(), false);
+        s->Release();
+    };
+    save(host_rt(g_backbuffer).tex, "cur");
+    save(g_gen.test_prev ? g_gen.test_prev : g_gen.prev_color, "prev");
+    save(g_gen.gen, "gen");
+    save(static_mask(), "mask");
+}
+
+// The presentation clock: one tick per presented frame (120 a second while frame generation is on).
+void wait_present_tick()
+{
+    static uint32_t last;
+    uint32_t target = last + 1;
+    if (g_present_tick.load() >= target) target = g_present_tick.load() + 1; // late: the next tick, no catch-up burst
+    while (g_present_tick.load() < target) WaitForSingleObject(g_present_wake, 4);
+    last = g_present_tick.load();
+}
+
+// One game frame, frame generation on: the generated frame at the next presentation tick and the real one at the
+// following one, so the picture shown sits half a step behind the game's -- the same delay every frame.
+//
+// Two presents per game frame only work when the game's own work fits in half a frame (8.3 ms): the second present
+// waits for the next tick, and that time is not available to the game. Slower machines (or heavy scenes) would drop
+// to 30 fps, so the generated frame is only used while the work leaves room, and the game then presents once per
+// frame as usual.
+void present_frame_gen()
+{
+    static LARGE_INTEGER last_end;
+    static double work_ms = 0.0;
+    static bool told;
+    static int told_on = -1;
+    LARGE_INTEGER f, now;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&now);
+    if (last_end.QuadPart) {
+        double ms = (double)(now.QuadPart - last_end.QuadPart) * 1000.0 / (double)f.QuadPart;
+        if (ms > 0.0 && ms < 200.0) work_ms = work_ms > 0.0 ? work_ms + (ms - work_ms) * 0.1 : ms;
+    }
+    bool want = frame_gen_wanted();
+    static bool fits = true; // hysteresis: a borderline machine must not flip between the two every frame
+    if (g_cfg.frame_gen_test) fits = true;
+    else if (fits && work_ms > 8.0) fits = false;
+    else if (!fits && work_ms < 6.5) fits = true;
+    bool gen = false;
+    if (want && fits && g_gen.has_prev) {
+        // A cut, a teleport or a level change is not motion: the reprojection would smear the whole picture.
+        static float prev_pos[3], prev_quat[4];
+        static bool have_cam;
+        float pos[3], quat[4];
+        bool cam = camera_state(pos, quat), cut = false;
+        if (cam && have_cam) {
+            float d2 = 0.0f, dot = 0.0f;
+            for (int i = 0; i < 3; i++) d2 += (pos[i] - prev_pos[i]) * (pos[i] - prev_pos[i]);
+            for (int i = 0; i < 4; i++) dot += quat[i] * prev_quat[i];
+            cut = d2 > 0.25f || fabsf(dot) < 0.9986f; // more than 0.5 m or about 3 degrees in one frame
+        }
+        if (cam) {
+            memcpy(prev_pos, pos, sizeof pos);
+            memcpy(prev_quat, quat, sizeof quat);
+            have_cam = true;
+        }
+        gen = !cut && build_gen_frame();
+    }
+    if (told_on != (int)gen) {
+        told_on = (int)gen;
+        logf("[framegen] %s (the game's frame work %.1f ms)%s", gen ? "on" : "off", work_ms,
+             gen ? ": a generated frame between the game's own" : work_ms > 8.0f ? ": too slow for two presents per frame" : "");
+    }
+    if (!gen) {
+        pace_swap();
+        present_backbuffer();
+        g_presents_shown = 1;
+        if (want) save_prev();
+        else g_gen.has_prev = false;
+        QueryPerformanceCounter(&last_end);
+        return;
+    }
+    wait_present_tick();
+    present_backbuffer(g_gen.gen);
+    if (host3d::present() == D3DERR_DEVICELOST) g_present_lost = true;
+    wait_present_tick();
+    present_backbuffer(nullptr);
+    if (host3d::present() == D3DERR_DEVICELOST) g_present_lost = true;
+    if (g_cfg.frame_gen_test) { // tests: leave the generated frame as the shown one (screenshots)
+        present_backbuffer(g_gen.gen);
+        if (host3d::present() == D3DERR_DEVICELOST) g_present_lost = true;
+    }
+    perf::pace_end(2, 2);
+    g_presents_shown = 2;
+    save_prev();
+    QueryPerformanceCounter(&last_end);
+}
+
 IDirect3DTexture9 *scratch_rt(uint32_t w, uint32_t h)
 {
     IDirect3DTexture9 *&t = g_snapshots[mem_key(1, w, h)];
@@ -605,6 +1713,7 @@ void bind_render_target(Surface *rt, Surface *z)
     uint32_t rw, rh;
     surface_size(rt, &rw, &rh);
     IDirect3DSurface9 *zs = nullptr;
+    IDirect3DTexture9 *ztex = nullptr;
     if (z) {
         if (rt == g_backbuffer) g_main_z = z;
         uint64_t zkey;
@@ -621,14 +1730,17 @@ void bind_render_target(Surface *rt, Surface *z)
         }
         g_owner[zkey] = Owner::Depth;
         zs = hz.surf;
+        ztex = hz.tex;
     }
     g_owner[mem_key(rt->Data, rw, rh)] = Owner::Color;
     h.epoch++;
     IDirect3DSurface9 *s = nullptr;
-    h.tex->GetSurfaceLevel(0, &s);
-    d->SetRenderTarget(0, s);
-    s->Release();
+    if (SUCCEEDED(h.tex->GetSurfaceLevel(0, &s))) {
+        d->SetRenderTarget(0, s);
+        s->Release();
+    }
     g_cur_rt = h.tex;
+    g_cur_depth = ztex;
     d->SetDepthStencilSurface(zs);
     if (g_cur_sx != h.sx || g_cur_sy != h.sy) { // a target of another scale: the scissor follows (SetRenderTarget
         g_cur_sx = h.sx;                         // re-applies the viewport itself)
@@ -646,13 +1758,16 @@ IDirect3DTexture9 *snapshot_of(IDirect3DTexture9 *src)
     perf::Scope perf_scope(perf::kRtCopy);
     perf::add_rt_copy();
     D3DSURFACE_DESC desc;
-    src->GetLevelDesc(0, &desc);
+    if (FAILED(src->GetLevelDesc(0, &desc))) return src;
     IDirect3DTexture9 *&snap = g_snapshots[mem_key(0, desc.Width, desc.Height)];
     if (!snap) host3d::dev()->CreateTexture(desc.Width, desc.Height, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &snap, nullptr);
     if (!snap) return src;
     IDirect3DSurface9 *a = nullptr, *b = nullptr;
-    src->GetSurfaceLevel(0, &a);
-    snap->GetSurfaceLevel(0, &b);
+    if (FAILED(src->GetSurfaceLevel(0, &a)) || FAILED(snap->GetSurfaceLevel(0, &b))) {
+        if (a) a->Release();
+        if (b) b->Release();
+        return src;
+    }
     host3d::end_scene();
     host3d::dev()->StretchRect(a, nullptr, b, nullptr, D3DTEXF_NONE);
     a->Release();
@@ -719,6 +1834,8 @@ void __stdcall vblank_thread(void *)
     LARGE_INTEGER f, last, now;
     QueryPerformanceFrequency(&f);
     QueryPerformanceCounter(&last);
+    // The console's vertical blank stays 59.94 Hz whatever the screen shows: game threads, callbacks and timers
+    // expect the console's rate. Presents are paced by D3DDevice_Swap (max frame rate), not by this clock.
     const int64_t period = f.QuadPart * 1001 / 60000; // 59.94 Hz
     DwmFlushFn flush = display_sync();
     logf("[d3d] vblank: %s", flush ? "follows the display (DwmFlush at ~60 Hz)" : "59.94 Hz timer");
@@ -763,6 +1880,70 @@ void __stdcall vblank_thread(void *)
 
 } // namespace
 
+// The mask of what does not move with the camera: the HUD and the first-person weapon. The draw path marks them
+// (d3d/draw.cpp) while the frame is drawn; the generated frame keeps those pixels from the current picture.
+IDirect3DTexture9 *static_mask()
+{
+    if (!g_cfg.frame_gen) return nullptr;
+    uint32_t w = host_w(g_width), h = host_h(g_height);
+    IDirect3DDevice9 *d = host3d::dev();
+    if (!w || !h || !d) return nullptr;
+    if (g_static_mask && g_mask_w == w && g_mask_h == h) return g_static_mask;
+    if (g_static_mask) {
+        g_static_mask->Release();
+        g_static_mask = nullptr;
+    }
+    if (FAILED(d->CreateTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &g_static_mask, nullptr)))
+        return nullptr;
+    g_mask_w = w;
+    g_mask_h = h;
+    IDirect3DSurface9 *s = nullptr;
+    if (SUCCEEDED(g_static_mask->GetSurfaceLevel(0, &s))) {
+        host3d::end_scene();
+        d->ColorFill(s, nullptr, 0);
+        s->Release();
+    }
+    logf("[framegen] static overlay mask %ux%u", w, h);
+    return g_static_mask;
+}
+
+IDirect3DPixelShader9 *mask_shader()
+{
+    if (!g_mask_ps) g_mask_ps = compile_ps("float4 main() : COLOR0 { return 1.0; }", "framegen mask");
+    return g_mask_ps;
+}
+
+void mask_clear()
+{
+    if (!g_static_mask) return;
+    IDirect3DSurface9 *s = nullptr;
+    if (FAILED(g_static_mask->GetSurfaceLevel(0, &s))) return;
+    IDirect3DDevice9 *d = host3d::dev();
+    for (int i = 0; i < 5; i++) d->SetTexture(i, nullptr); // the generated frame's pass left the mask bound
+    host3d::end_scene();
+    HRESULT hr = d->ColorFill(s, nullptr, 0);
+    static bool told;
+    if (FAILED(hr) && !told) logf("[framegen] mask clear failed 0x%08lx", hr), told = true;
+    s->Release();
+    forget_sent_state();
+}
+
+// The game's 3D draws all go through one matrix: the four rows in c10..c13 (clip = position x VP). The last
+// program draw of the frame leaves it behind, and no 2D/HUD draw touches those registers.
+void note_world_draw()
+{
+    if (g_world_vp_frame == g_frame_count.load() + 1) return; // this frame's, once
+    const float (*c)[4] = g_st.vs_constants;
+    if (fabsf(c[13][0]) < 1e-6f && fabsf(c[13][1]) < 1e-6f && fabsf(c[13][2]) < 1e-6f) return; // no camera (2D shader)
+    memcpy(g_world_vp, c + 10, sizeof g_world_vp);
+    g_world_vp_frame = g_frame_count.load() + 1;
+}
+
+bool frame_gen_wanted()
+{
+    return false; // frame generation was removed
+}
+
 // Host render target texture for a texture the game samples (same memory and size), or null. A draw that
 // samples the target it renders into (BLACK's final colour pass reads the back buffer) gets a copy; one
 // copy per draw is shared by all stages.
@@ -789,7 +1970,7 @@ IDirect3DTexture9 *smoothed_rt(HostRT &h, uint32_t draw_serial)
     if (!h.smooth) host3d::dev()->CreateTexture(h.w, h.h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &h.smooth, nullptr);
     if (!h.smooth) return h.tex;
     IDirect3DSurface9 *s = nullptr;
-    h.smooth->GetSurfaceLevel(0, &s);
+    if (FAILED(h.smooth->GetSurfaceLevel(0, &s))) return h.tex;
     float c[4] = {0.25f / h.xw, 0.25f / h.xh, 0, 0};
     host3d::end_scene();
     fullscreen_pass(g_box_ps, h.tex, s, nullptr, h.w, h.h, false, c, true);
@@ -1040,7 +2221,7 @@ void pace_swap()
     uint32_t n;
     switch (iv & 0xF) {
     case 0: n = (iv & 0x80000000) ? 0 : 1; break; // DEFAULT = ONE
-    case 2: n = g_cfg.fps == 60 ? 1 : 2; break; // BLACK asks for TWO_OR_IMMEDIATE (30 fps); its update uses frame time
+    case 2: n = 1; break; // BLACK asks for TWO_OR_IMMEDIATE; the world now steps by the real time
     case 4: n = 3; break;
     case 8: n = 4; break;
     default: n = 1; break;
@@ -1055,42 +2236,55 @@ void pace_swap()
     last_vb = now_vb;
 }
 
-// Maximum presents per second (black.ini fps_cap, PC SETTINGS > VIDEO > RESOLUTION ... MAX FRAME RATE): a sleep
-// that enforces a minimum frame time. The game steps its world once per presented frame, so a cap that holds
-// the presents below its own 30/60 rate also stretches the world's frame time (timing::set_world_step), which
-// keeps real time: "30" is the game at 30 fps, not slow motion. Above 60 the vblank pacing (pace_swap) is the
-// limit, so a cap there has nothing left to trim.
-void fps_cap_wait()
+// Maximum presents per second (black.ini fps_cap, PC SETTINGS > DISPLAY > MAX FRAME RATE), the recomp's model:
+// 0 = unlimited, -1 = just under the monitor's refresh, else that many presents a second. It only spaces the
+// presents out; the game's clocks and physics follow the real frame time (frametime.cpp), so a cap does not
+// slow the game down.
+int frame_rate_target()
 {
     int cap = g_cfg.fps_cap;
-    set_world_step(cap >= 30 && cap < 60 ? 1.0f / (float)cap : 1.0f / 60.0f);
-    if (cap < 30) return;
-    static bool told;
-    if (!told) {
-        logf("[d3d] frame rate capped at %d fps%s", cap, cap < 60 ? " (the world steps to match)" : "");
-        told = true;
+    if (cap >= 0) return cap;
+    static int hz;
+    static ULONGLONG next;
+    ULONGLONG now = GetTickCount64();
+    if (now >= next) {
+        next = now + 1000;
+        DEVMODEW dm = {};
+        dm.dmSize = sizeof dm;
+        hz = EnumDisplaySettingsW(nullptr, ENUM_CURRENT_SETTINGS, &dm) && dm.dmDisplayFrequency > 1
+                 ? (int)dm.dmDisplayFrequency
+                 : 0;
     }
-    static LARGE_INTEGER last;
+    if (!hz) return 0;
+    return hz > 3 ? hz - 3 : hz; // a few under: a variable refresh display stays in range and vsync never waits a refresh
+}
+
+void fps_cap_wait()
+{
+    static int told = -2;
+    int cap = frame_rate_target();
+    if (told != cap) {
+        told = cap;
+        if (cap <= 0) logf("[d3d] frame rate: unlimited");
+        else logf("[d3d] frame rate: at most %d fps", cap);
+    }
+    if (cap <= 0) return;
+    static LARGE_INTEGER next;
     LARGE_INTEGER f, now;
     QueryPerformanceFrequency(&f);
     QueryPerformanceCounter(&now);
-    if (last.QuadPart) {
-        int64_t min_ticks = f.QuadPart / cap;
-        int64_t wait_until = last.QuadPart + min_ticks;
-        int64_t left_ms = (wait_until - now.QuadPart) * 1000 / f.QuadPart;
-        if (left_ms > 0) {
-            timeBeginPeriod(1);
-            Sleep(left_ms > 2 ? (DWORD)(left_ms - 1) : 0);
-            do {
-                QueryPerformanceCounter(&now);
-            } while (now.QuadPart < wait_until);
-            timeEndPeriod(1);
-        } else {
-            last = now;
-            return;
-        }
+    int64_t period = f.QuadPart / cap;
+    if (!next.QuadPart || now.QuadPart - next.QuadPart > period) next.QuadPart = now.QuadPart;
+    next.QuadPart += period;
+    int64_t left_ms = (next.QuadPart - now.QuadPart) * 1000 / f.QuadPart;
+    if (left_ms > 2) {
+        timeBeginPeriod(1);
+        Sleep((DWORD)(left_ms - 1));
+        timeEndPeriod(1);
     }
-    QueryPerformanceCounter(&last);
+    do {
+        QueryPerformanceCounter(&now);
+    } while (now.QuadPart < next.QuadPart);
 }
 
 // Pause on focus loss (black.ini pause_focus, PC SETTINGS > AUDIO AND GAME): while the game window is not the
@@ -1187,7 +2381,7 @@ void capture_frame()
             logf("[capture] could not start");
             return;
         }
-        logf("[capture] %ux%u BGRX frames at %d fps to %s", w, h, g_cfg.fps, narrow(g_cfg.rawvideo).c_str());
+        logf("[capture] %ux%u BGRX frames at %d fps to %s", w, h, frame_rate_target(), narrow(g_cfg.rawvideo).c_str());
     }
     RECT src = {pic.left, pic.top, pic.left + (LONG)w, pic.top + (LONG)h};
     d->StretchRect(g_host_backbuffer, &src, shrunk, nullptr, D3DTEXF_POINT);
@@ -1208,6 +2402,13 @@ namespace {
 void release_host_targets()
 {
     host3d::end_scene();
+    release_gen(); // frame generation's own textures and the static mask are D3DPOOL_DEFAULT too
+    xd3d::draw_release_buffers(); // the dynamic vertex/index ring lives in D3DPOOL_DEFAULT
+    if (g_static_mask) {
+        g_static_mask->Release();
+        g_static_mask = nullptr;
+        g_mask_w = g_mask_h = 0;
+    }
     IDirect3DDevice9 *d = host3d::dev();
     d->SetRenderTarget(0, g_host_backbuffer);
     d->SetDepthStencilSurface(g_host_depth);
@@ -1232,7 +2433,16 @@ void release_host_targets()
             t->Release();
             t = nullptr;
         }
+    for (IDirect3DTexture9 *&t : g_ao_tex)
+        if (t) {
+            t->Release();
+            t = nullptr;
+        }
+    g_ao_w = g_ao_h = 0;
+    if (g_ao_fail == 2) g_ao_fail = 0; // the targets are gone with the device: try again on the new one
+    g_ao_told = false;
     g_cur_rt = nullptr;
+    g_cur_depth = nullptr;
 }
 
 // The game's current target and depth buffer bound again, with the viewport and scissor.
@@ -1383,12 +2593,14 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
     DTRACE("0x%x", Flags);
     pb_flush();
     perf::swap_begin();
-    fps_cap_wait();         // --fps-cap: a ceiling on presents per second
+    fps_cap_wait();         // MAX FRAME RATE: only spaces presents; the world follows the real time
+    perf::pace_end(1, 1);   // the game's time now follows the real time: there is no fixed step to be late for
     pause_while_unfocused(); // pause_focus: frozen and muted while the window has no focus
-    pace_swap();
     subtitles_tick(host_w(g_width), host_h(g_height)); // over the movie, before the picture is presented
     fmv_hint_tick(host_w(g_width), host_h(g_height));  // "Pular video" while a movie plays
+    fps_set_presents(1);
     fps_tick(host_w(g_width), host_h(g_height));        // the frame rate counter, same place
+    trainer::tick(host_w(g_width), host_h(g_height));   // the trainer's F5 menu (trainer.cpp), under the cursor
     cursor_tick(host_w(g_width), host_h(g_height));     // the port's own menu cursor, over everything
     restart_poll();                                    // a mod changed and the player is back at the main menu
     present_backbuffer();
@@ -1403,6 +2615,7 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
     }
     if (g_shot_requested.exchange(false)) { // tests: --press-file "shot:name"
         std::lock_guard<std::mutex> lk(g_shot_lock);
+        dump_fg_frames(g_shot_tag.c_str());
         screenshot_now(g_shot_tag.c_str());
     }
     static ULONGLONG t0 = GetTickCount64();
@@ -1410,10 +2623,15 @@ uint32_t __stdcall D3DDevice_Swap(uint32_t Flags)
     if (periodic && (frames == 1 || frames % g_cfg.shot_every == 0) && GetTickCount64() - t0 >= g_cfg.shot_start * 1000ull) {
         char tag[32];
         snprintf(tag, sizeof tag, "frame_%05u", frames);
+        {
+            std::lock_guard<std::mutex> lk(g_shot_lock);
+            dump_fg_frames(tag);
+        }
         screenshot_now(tag);
     }
     bool force = g_reset_requested.exchange(false);
     if (host3d::present() == D3DERR_DEVICELOST || g_device_lost || force) recover_device(force);
+    frametime_tick(); // the share the assembly hooks read for the next frame
     check_render_size();
     perf::frame_end(host_w(g_width), host_h(g_height));
     dev_field<uint32_t>(DEV_SWAPCOUNT)++;
@@ -1700,6 +2918,9 @@ void __stdcall D3DDevice_DeleteVertexShader(uint32_t Handle)
 {
     DTRACE("0x%x", Handle);
     if (g_st.vertex_shader == Handle) g_st.vertex_shader = 0;
+    // The game sometimes passes the current FVF code here (0x444, XYZRHW | DIFFUSE | TEX1) when a
+    // level unloads. FVF is not a shader pointer; ignore it instead of reading address 0x444.
+    if (vs_is_fvf(Handle)) return;
     vs_delete(vs_from_handle(Handle));
 }
 
@@ -1723,10 +2944,11 @@ static void set_vs_constants(int slot, const float *data, uint32_t count)
     pb_flush();
     if (debug_frame_active() && slot <= 59 && slot + (int)count > 58)
         logf("[rt] vertex constants %d+%u written (screen-space slots 58/59): %g %g %g %g", slot, count, data[0], data[1], data[2], data[3]);
-    for (uint32_t i = 0; i < count; i++) {
-        int r = slot + (int)i;
-        if (r >= 0 && r < 192) memcpy(g_st.vs_constants[r], data + 4 * i, 16);
-    }
+    // The game re-sends whole batches of registers per draw (the shadow is its only copy), so the run is copied in
+    // one go: the per-register loop cost ~0.9 ms a frame in a busy scene.
+    int hi = slot + (int)count, lo = slot < 0 ? 0 : slot;
+    if (hi > 192) hi = 192;
+    if (hi > lo) memcpy(g_st.vs_constants[lo], data + 4 * (lo - slot), (size_t)(hi - lo) * 16);
 }
 
 void __stdcall D3DDevice_SetVertexShaderConstant1(int Register, const float *pConstantData)

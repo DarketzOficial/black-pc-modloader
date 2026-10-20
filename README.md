@@ -1,244 +1,267 @@
-# BLACK PC — Modloader
+# BLACK PC — ModLoader
 
-**Modloader 1.0** para o **[BLACK PC port](https://github.com/Spark198rus/black-pc)** (de **Spark198rus**), o port que roda o `default.xbe` original do **BLACK** (Xbox) nativamente no Windows.
+**ModLoader 1.4.10** para o **[BLACK PC port](https://github.com/Spark198rus/black-pc)** de
+[Spark198rus](https://github.com/Spark198rus/black-pc).
 
-Este repositório é o **código-fonte do modloader** (aberto, GPL-2.0-or-later). Os **mods** que acompanham o pacote
-(texturas HD, HUD, PT-BR, ícones…) e ficam no **[Releases](../../releases)** junto com o modloader
-pronto para instalar: é só extrair na pasta do port.
+O projeto é o port do **BLACK** (Xbox NTSC-U) para Windows com uma camada de mods e um
+launcher próprio. O jogo **não** vem no pacote: você precisa do seu dump em `game\`.
 
 ---
 
-## ⚠️ Compatibilidade — leia antes de instalar
+## Compatibilidade
 
 | | |
 |---|---|
-| ✅ **Funciona** | **BLACK PC port** do **Spark198rus** — https://github.com/Spark198rus/black-pc |
-| ❌ **Não funciona** | **BLACK-XBERecomp** do **TGP482** — https://github.com/TGP482/BLACK-XBERecomp |
-| 🎯 **Versão do port** | **Modloader 1.0** funciona no **BLACK PC port 0.2.0** |
-| 🎮 **Jogo** | O modloader **não inclui o jogo**: você precisa ter o BLACK (Xbox NTSC-U) já com **dump** dentro da pasta **`game`** do port |
+| **Funciona** | BLACK PC port do Spark198rus — https://github.com/Spark198rus/black-pc |
+| **Não funciona** | BLACK-XBERecomp do TGP482 (projeto diferente, sem `blackrt.dll`) |
+| **Versão do port** | 0.2.0 |
+| **Jogo** | BLACK Xbox NTSC-U com dump em `game\` (o pacote não inclui o jogo) |
+| **Sistema** | Windows 10/11, 32 ou 64 bits |
+| **Hardware mínimo** | 4 GB de RAM, 1 GB de VRAM (Direct3D 9), 5 GB livres |
 
-O modloader é um `blackrt.dll` modificado: ele substitui o DLL do port do Spark198rus. O **BLACK-XBERecomp** do TGP482 é
-outro projeto (recompilação estática, sem `blackrt.dll`) e **não** tem nenhuma relação com este modloader — não tente
-misturar os arquivos dos dois.
-
----
-
-## O que é o modloader
-
-O port do Spark198rus tinha as opções do PC embutidas (`PC SETTINGS` no menu e na pausa). O modloader acrescenta a
-**camada de mods** em cima disso:
-
-- uma pasta **`mods\`** na raiz do port: cada mod é uma pasta dentro dela, e os arquivos dele substituem os do jogo
-  **sem alterar o jogo** (o port serve o arquivo do mod na hora da leitura);
-- a tela **`PC SETTINGS > MODS`**, no menu principal e na pausa, que liga e desliga cada mod (e as opções do próprio
-  modloader, como o HUD 16:9, o HUD que some e as texturas HD);
-- **mouse** nos menus (do port e do próprio jogo): o cursor não anda como seta — a linha em que ele está recebe o
-  destaque, o **botão esquerdo** confirma (e, em barras, sobe/desce conforme o lado clicado) e o **botão direito** volta;
-  a **roda do mouse** anda como as setas cima/baixo;
-- **contador de FPS**, aviso de **"Pular video"** nos filmes (com fade), **texturas HD**, legendas `.srt` e as melhorias
-  do port (campo de visão, resolução interna, HUD 16:9, brilho, gama, reverb, mouse look…).
-
-Tudo isso é o que está neste repositório. Os **mods em si** (os arquivos de textura, texto e vídeo) **não** estão aqui.
-
----
-
-## Requisitos
-
-| | |
-|---|---|
-| **Sistema** | Windows 10 **32 ou 64 bits** |
-| **Memória** | 4 GB de RAM |
-| **Placa de vídeo** | 1 GB de VRAM (com Direct3D 9) |
-| **Armazenamento** | 5 GB livres |
-| **Port** | BLACK PC port do Spark198rus (0.2.0) |
-| **Jogo** | BLACK (Xbox NTSC-U) com dump em **`game\`** |
-
-Roda em PCs modestos: o port foi feito para levar o jogo do Xbox ao PC sem exigir hardware atual, e o modloader não
-acrescenta custo de desempenho (ele é o próprio port, com a camada de mods).
+O `blackrt.dll` deste projeto substitui o DLL do port. Não misture os arquivos com o
+BLACK-XBERecomp.
 
 ---
 
 ## Download e instalação
 
-1. **Baixe o port** (se ainda não tiver): https://github.com/Spark198rus/black-pc
-   Deixe o **jogo com dump dentro da pasta `game`**, ao lado do `black.exe`:
+1. Baixe o [BLACK PC port](https://github.com/Spark198rus/black-pc) e deixe o jogo em
+   `game\`, ao lado de `black.exe`:
+
    ```
-   BLACK\            (a pasta do port)
+   BLACK\
      black.exe
      blackrt.dll
-     game\           -> default.xbe + arquivos do jogo (o dump)
+     game\           default.xbe + arquivos do jogo
      savedata\
-     ...
    ```
-2. **Baixe o zip do modloader** na aba **[Releases](../../releases)** (`BLACK-PC-Modloader-1.0.zip`). Ele já contém o
-   modloader **e todos os mods**.
-3. **Feche o jogo.** Extraia o zip **dentro da pasta do port** (a que tem o `black.exe`), confirmando a substituição do
-   `blackrt.dll`.
-4. **Abra o `black.exe`.** Os mods já vêm ligados. Para ligar/desligar qualquer um:
-   **`OPÇÕES > CONF. PC > MODS`** no menu principal, ou **`pausa (Esc) > CONF. PC > MODS`** durante o jogo.
 
-> Guarde uma cópia do seu `blackrt.dll` antigo antes (ex.: `blackrt.dll.antes`). O pacote também traz o
-> `uninstaller-modloader.exe`: dois cliques nele e ele apaga a pasta `mods` e volta o DLL anterior
-> (`blackrt.dll.antes-do-modloader` ou `blackrt.dll.original-do-port`). Suas partidas (`savedata`) e o `black.ini`
-> **não** são tocados.
+2. Baixe na aba [Releases](../../releases):
+   - **`BLACK-PC-Modloader-1.4.10.zip`** — loader/base para instalar;
+   - os pacotes de mods desejados (`mod-ptbr`, `mod-hdtextures`, etc.);
+   - **`black-pc-modloader.zip`** é o pacote pequeno usado pelo **atualizador** depois
+     que o launcher já está instalado.
 
-### O que já vem no pacote
+   O pacote `BLACK-PC-Modloader-1.4.10-com-mods.zip` é só para testes: ele já contém o
+   loader e todos os mods, sem o jogo.
 
-| Mod / opção | O que faz |
-|---|---|
-| **HD TEXTURES** | Usa o pack de texturas HD em `mods\hdtextures\hd` (a linha mostra a porcentagem pronta: **`ON 34%`**) |
-| **HUD 16:9** | Barras de vida e munição proporcionais, encaixadas nos cantos, sem o esticamento do 4:3 |
-| **FADING HUD** | Some com fade quando o jogador fica um tempo sem ação (só os painéis de vida/munição) |
-| **PT-BR TEXT + KEYBOARD** | Tradução PT-BR + textos com as teclas do teclado + vídeos legendados |
-| **XBOX ICONS AS KEYS** | Ícones A/B/seta dos menus viram teclas do PC (Enter/Bksp/seta) |
-| **KEYBOARD PROMPTS (EN)** | Botões do Xbox viram teclas do teclado, em inglês (só vale com o jogo em inglês) |
+3. Feche o jogo. Extraia o conteúdo **dentro da pasta do port** (a que tem `black.exe`),
+   confirmando a substituição de `blackrt.dll`.
 
-Os três últimos são pastas dentro de `mods\`. O **HD TEXTURES**, o **HUD 16:9** e o **FADING HUD** são opções do
-próprio modloader (aparecem na mesma tela `MODS`).
+4. Abra **`blacklauncher.exe`** (ou o atalho `BLACK`). Na primeira abertura, o launcher
+   mostra as novidades desta versão; depois use **AVANÇADO > Informações da atualização**
+   para rever.
 
-### Padrões na primeira instalação
+5. Escolha os ajustes/mods e clique em **JOGAR**. O launcher inicia o jogo por um
+   observador escondido que cuida dos logs e do relatório em caso de erro.
 
-Na primeira vez que o modloader abre (sem `black.ini` na pasta do port), ele já vem configurado com:
-
-- **Pular vídeos** ligado;
-- **HUD 16:9** ligado;
-- **FADING HUD** ligado;
-- **HD TEXTURES** ligado (quando o pack está em `mods\hdtextures\hd`);
-- **XBOX ICONS AS KEYS** ligado;
-- **PT-BR TEXT + KEYBOARD** ligado (o jogo em português);
-- **Velocidade de andar** em **25%**;
-- **Campo de visão** em **120**;
-- **Campo de visão da arma (viewmodel)** em **92**.
-
-A partir da primeira vez que você mudar qualquer opção, o `black.ini` guarda as **suas** escolhas — desligar um mod
-continua desligado nas próximas vezes.
+> Guarde uma cópia do seu `blackrt.dll` antigo. O pacote também traz o
+> `uninstaller-modloader.exe`, que apaga a pasta `mods` e restaura o DLL anterior
+> (`blackrt.dll.antes-do-modloader` ou `blackrt.dll.original-do-port`).
+> `savedata\` e `black.ini` não são tocados.
 
 ---
 
-## Texturas HD
+## Novidades da 1.4.10
 
-O mod de texturas HD troca, na hora de subir para a placa, as texturas do jogo pelas do pack **BLACK HD Reimagined**
-(feito para o BLACK de PlayStation 2). 
+### Relatório de erro e logs
 
-Na linha **HD TEXTURES**, depois do **ON**, aparece o quanto do pack está pronto:
+- Quando o jogo falha, o launcher mostra uma janela no mesmo visual do launcher, com
+  **ENVIAR** e **NÃO ENVIAR**.
+- **ENVIAR** manda para o canal `#logs-black` no Discord:
+  - o `black-crash-*.log` como anexo;
+  - versão do ModLoader e do port;
+  - Windows, CPU, GPU, RAM e tela;
+  - usuário e máquina do Windows;
+  - menu onde o jogo estava, mods ativos e ajustes do `black.ini`.
+- Nada é enviado sem o clique. O histórico de tentativas fica em
+  `log\launcher\reports.log`.
+- `black.log` e `black-crash-*.log` saem da raiz para `log\game\` e `log\crash\`; a raiz
+  fica limpa.
+- Se o jogador abrir `black.exe` direto e o jogo falhar, o próximo início do launcher
+  encontra o crash log na raiz e mostra a mesma janela uma vez.
 
-> **`HD TEXTURES    ON 34%`**
+### Tela de novidades (changelog)
 
-### Antes e depois
+- Depois de uma atualização, o launcher mostra as notas da versão **uma vez** no primeiro
+  início.
+- O controle fica em `launcher.ini` na preferência `changelog_seen`.
+- Para rever: **AVANÇADO > Informações da atualização**.
+- O texto é organizado em cartões e tem rolagem quando necessário.
 
-| Antes | Depois |
-|:---:|:---:|
-| <img src="docs/images/01antes.png" width="420"> | <img src="docs/images/01depois.png" width="420"> |
-| <img src="docs/images/02antes.png" width="420"> | <img src="docs/images/02depois.png" width="420"> |
+### Pasta das texturas HD
+
+- O caminho padrão é `mods\hdtextures\hd`.
+- **TROCAR PASTA** abre o seletor nativo do Windows na pasta atual e procura `map.csv`.
+- O **X** ao lado limpa o caminho; campo vazio desliga as texturas HD.
+- O caminho é salvo no `black.ini` ao clicar em **SALVAR**.
+
+### Apoio ao projeto
+
+Depois dos ícones do YouTube e Discord, o botão **DOAR/DONATE** abre a tela de apoio:
+
+- QR code do **PIX**;
+- **LivePix**: https://livepix.gg/darketz;
+- Bitcoin, Dogecoin, Ethereum e USDT, com botão de copiar.
+
+O projeto continua gratuito. A tela também explica que os recursos usados no
+desenvolvimento são pagos, incluindo o uso de IA como o Claude Code.
+
+### Correções
+
+- Corrigido o crash ao descarregar uma fase: o código FVF `0x444` podia ser tratado como
+  um ponteiro de vertex shader; agora handles FVF/inválidos são ignorados.
+- A tela do port no jogo voltou a se chamar **MODS** (não mais `IMAGE`). Com o mod PT-BR,
+  o título continua **CONF. PC**.
+- `black.ini`, `launcher.ini`, `savedata\`, `game\`, `mods\` e `log\` não são alterados
+  pelas atualizações.
+
+### Recursos anteriores mantidos
+
+- HUD 16:9 e FADING HUD.
+- Filtros de imagem: SHARPENING, DETAILS, CLARITY e VIBRANCE (0–100).
+- Página de imagem no jogo e aba **GRÁFICOS** no launcher.
+- FOV da arma limitado a 80.
+- Mouse nos menus, FPS, legendas, pular vídeos e trainer (F5).
+- Atualização automática pelo GitHub.
+- Preservação das configurações e dos mods durante a atualização.
 
 ---
 
-## Mouse nos menus
+## Launcher
 
-Enquanto um menu está na tela, o cursor fica solto e o próprio modloader desenha a seta (a do Windows não aparece):
+O launcher organiza as opções em **VÍDEO, GRÁFICOS, DESEMPENHO, ÁUDIO E JOGO,
+CONTROLES, MODS e AVANÇADO**.
 
-- **passar o mouse** sobre uma linha coloca o destaque nela (fora das linhas, o destaque fica onde o teclado deixou);
-- **botão esquerdo** confirma a linha — e, em barras e listas, sobe/desce conforme o lado em que você clicou (na barra de
-  uma opção, o valor acompanha o ponto clicado);
-- **botão direito** volta;
-- **roda do mouse** anda como as setas cima/baixo;
-- teclado e controle continuam funcionando normalmente.
+- Todos os ajustes têm um **?** com explicação.
+- **SALVAR** grava o `black.ini`; mudanças não salvas são avisadas.
+- **RESTAURAR** volta aos padrões de uma instalação nova.
+- **JOGAR** inicia o jogo e o observador de logs.
+- **PROCURAR ATUALIZAÇÃO** consulta as releases do GitHub.
+- **DOAR** abre a tela de apoio.
+- O launcher tem idioma PT/EN em `launcher.ini`.
 
-Funciona nos menus do port **e** nos menus do próprio jogo (opções, dificuldade, perfil, teclado de nome, pause…).
+### Mods
 
----
+Os mods ficam em `mods\<nome>` e aparecem na aba **MODS** do launcher, com ON/OFF.
+O port entrega o arquivo do mod no lugar do arquivo do jogo, sem alterar o jogo.
 
-## Como fazer mods
+Os mods de arquivo distribuídos nos Releases são:
 
-Qualquer pessoa pode criar mods para o port **sem recompilar nada**: um mod é uma pasta em `mods\` com os arquivos que
-ele quer substituir. O port entrega o arquivo do mod no lugar do arquivo do jogo, e o mod liga/desliga na tela `MODS`
-sem tocar no jogo.
+- **PT-BR TEXT + KEYBOARD** — tradução, teclas e vídeos legendados;
+- **XBOX ICONS AS KEYS** — ícones dos botões como teclas;
+- **KEYBOARD PROMPTS (EN)** — prompts em inglês;
+- **HD TEXTURES** — pacote de texturas em alta resolução.
 
-```
-BLACK\
-  mods\
-    meu-mod\
-      mod.ini                 (opcional: nome, prioridade, idioma)
-      game\
-        language\strings\MainUS.bin     <- substitui o arquivo do jogo
-        export\frontend\Core.bin
-        videos\...
-      subtitles\              (opcional: legendas .srt desenhadas pelo port)
-        02_n.srt
-```
+O mod de idioma de maior prioridade define o idioma da sessão; mods de outro idioma ficam
+bloqueados (`OFF (IDIOMA)`). Por isso, para jogar em PT-BR, o **PT-BR TEXT + KEYBOARD**
+precisa estar ligado; o mod de prompts em inglês não atrapalha.
 
-- **`mod.ini`** — `name = <nome mostrado na tela MODS>`, `priority = <número>` (quem tem a maior prioridade ganha
-  quando dois mods trazem o mesmo arquivo) e `lang = <idioma>` (ex.: `en`, `ptbr`; um mod de idioma diferente do que está
-  sendo jogado fica bloqueado e não entrega arquivo nenhum).
-- **`.off`** — um arquivo chamado `.off` dentro da pasta do mod o deixa **desligado**; sem ele, o mod vem **ligado**. A
-  própria tela `MODS` cria/apaga esse arquivo.
-- **Reiniciar** — o jogo lê alguns arquivos (textos, por exemplo) apenas ao iniciar. Ao ligar/desligar um mod de
-  arquivo, a tela mostra `(REINICIAR)` e o port **se reinicia sozinho** quando você volta ao menu principal.
-- **`subtitles\`** — arquivos `.srt` com o nome do filme (`02_n.srt` para `02_n.xmv`), desenhados pelo port por cima do
-  vídeo. Ligam/desligam junto com o mod.
-
-O formato completo, com todos os detalhes e exemplos, está em **[docs/MODS.md](docs/MODS.md)**.
+Mais detalhes: [`docs/MODS.md`](docs/MODS.md).
 
 ---
 
-## Compilando o modloader (código-fonte)
+## Atualizações
 
-O modloader é o port do Spark198rus + a camada de mods, em **C++20** para **Windows x86 (32 bits)**, com
-**Visual Studio / MSVC** e **CMake**. O código está neste repositório:
+O launcher consulta o GitHub em busca da release mais nova e baixa o asset
+`black-pc-modloader.zip`. O helper:
+
+- copia o launcher, o `blackrt.dll` e o `LEIA-ME.txt`;
+- **não copia** `black.ini`, `launcher.ini`, `savedata\`, `game\`, `mods\` nem `log\`;
+- reinicia o launcher ao terminar.
+
+A release atual é **tag `1.4.10`**, nome **`ModLoader 1.4.10`**. As notas estão em
+[`docs/RELEASE-NOTES-1.4.10.md`](docs/RELEASE-NOTES-1.4.10.md).
+
+---
+
+## Logs e suporte
 
 ```
-src\            código do modloader (mods, menus, HLE do port, D3D, áudio, input)
-stub\           black.exe (stub mínimo que carrega o XBE)
-CMakeLists.txt  projeto (gera black.exe + blackrt.dll)
+log\
+  game\       black-AAAAMMDD-HHMMSS.log (uma partida por arquivo)
+  crash\      black-crash-*.log e relatórios de falha de início
+  launcher\   reports.log e, depois de uma atualização, changelog-<versao>.txt
 ```
+
+O log completo pode ser anexado manualmente no Discord se o envio automático falhar.
+Nunca envie sua pasta `savedata\` ou o jogo.
+
+---
+
+## Compilando
+
+### Port (C++ / Windows x86)
+
+Requisitos: Visual Studio 2026 (ou 2022) Build Tools com C++ x86 e CMake 3.24+.
 
 ```bat
 cmake --preset win32
 cmake --build build/win32 --config RelWithDebInfo
 ```
 
-Saída: `build\win32\RelWithDebInfo\black.exe` + `blackrt.dll` (ficam juntos, na pasta do port).
-Instruções detalhadas, opções de linha de comando e o mapa dos arquivos: **[docs/BUILDING.md](docs/BUILDING.md)**.
+Saída: `build\win32\RelWithDebInfo\black.exe` e `blackrt.dll`. Detalhes em
+[`docs/BUILDING.md`](docs/BUILDING.md).
 
-> O modloader é software livre sob **GPL-2.0-or-later** (a mesma licença do port do Spark198rus). Se você distribuir uma
-> versão modificada, distribua também o código-fonte.
+### Launcher (WPF / .NET Framework 4.8)
+
+```powershell
+cd launcher
+.\build.ps1 -Deploy
+```
+
+O projeto está em `launcher\` e usa `Assets\logo.png`, `Assets\qrcode.png` e o tema do
+launcher. O `build.ps1 -Deploy` copia o `blacklauncher.exe` para a pasta do port.
+
+---
+
+## Estrutura do repositório
+
+| Pasta/arquivo | O que é |
+|---|---|
+| `src\` | código do port (HLE do Xbox, D3D, áudio, input, front end, mods) |
+| `stub\` | o `black.exe` mínimo que carrega o XBE e chama `blackrt.dll` |
+| `launcher\` | código-fonte do launcher WPF e seus assets |
+| `docs\` | documentação, notas de versão e guia de mods |
+| `CMakeLists.txt` / `CMakePresets.json` | build do port |
+| `LICENSE` | GPL-2.0-or-later |
+
+O jogo, as texturas, os vídeos traduzidos e os binários não ficam neste repositório; os
+pacotes prontos ficam nos Releases.
+
+---
+
+## Solução de problemas
+
+- **A tela do jogo está em inglês:** ligue **PT-BR TEXT + KEYBOARD** na aba MODS do
+  launcher. Se o mod de prompts em inglês estiver ligado e o PT-BR desligado, a sessão
+  fica em inglês.
+- **O jogo fechou com erro:** veja `log\crash\` ou use o relatório do launcher.
+- **HD TEXTURES não aparece:** confira `mods\hdtextures\hd\map.csv` e o caminho em
+  **AVANÇADO > Pasta das texturas HD**.
+- **O launcher não inicia o jogo:** confirme `black.exe`, `blackrt.dll` e
+  `game\default.xbe` na mesma pasta.
+- **Atualização não aparece:** a release precisa ter tag de versão (ex.: `1.4.10`) e o
+  asset `black-pc-modloader.zip`; releases marcadas como draft/prerelease são ignoradas.
 
 ---
 
 ## Créditos
 
-**Modloader, mods e adaptação para PC — [Darketz](https://www.youtube.com/c/Darketz)**
-- a camada de mods, a tela `MODS`, o mouse nos menus, o contador de FPS, o aviso "Pular video", o HUD 16:9, o HUD que
-  some, o suporte a texturas HD, as legendas e o pacote PT-BR da versão PC.
+- **Darketz** — modloader, launcher, tela MODS, mouse nos menus, HUD 16:9, FADING HUD,
+  filtros de imagem, trainer, texturas HD, tradução/adaptação PT-BR da versão PC e
+  empacotamento.
+  YouTube: https://www.youtube.com/c/Darketz
+  Discord: https://discord.gg/HKpgA9ghVE
+- **Spark198rus** — port original do BLACK para PC.
+- **Bruno Fernando, Rayne Games, André Romhacker e HNNEWGAMES** — tradução PT-BR original
+  (2018/2019).
+- **BLACK HD Reimagined** — pack de texturas HD para PCSX2 (SLUS-21376).
+- Desenvolvido com **IA (Claude Code)** como assistente, **Visual Studio 2026**
+  (MSVC, C++20, CMake) e WPF/.NET.
 
-**Port original (BLACK PC) — Spark198rus**
-- https://github.com/Spark198rus/black-pc — o port que roda o `default.xbe` do Xbox nativamente no Windows, sobre o qual
-  o modloader é feito.
+**BLACK** é marca da Electronic Arts. O projeto não inclui o jogo nem arquivos do jogo;
+você precisa ter o BLACK original (Xbox NTSC-U).
 
-**Tradução PT-BR original — Bruno Fernando, Rayne Games, André Romhacker e HNNEWGAMES (2018/2019)**
-- o texto em português e os vídeos legendados partiram da tradução da comunidade; as modificações e a adaptação para a
-  versão PC (textos, menus, botões, título) são do Darketz.
-
-**Pack de texturas HD — "BLACK HD Reimagined"**
-- pack de texturas HD do BLACK para PCSX2 (SLUS-21376), usado com o casamento por conteúdo do port.
-
-**Ferramentas**
-- Desenvolvido com **IA (Claude Code)** como assistente, **Visual Studio 2026** (MSVC, C++20, CMake) e as seguintes
-  linguagens/fontes: **C++20** no loader (HLE do kernel/D3D/áudio/input do Xbox, front end, mods), **ActionScript 2**
-  (as páginas do front end do jogo, montadas pelo loader) e **Python** nas ferramentas de apoio (casamento das texturas,
-  patch dos textos, empacotamento).
-- O port se apoia no Xbox Development Kit (XBE, D3D8, XAPILIB, DSOUND) e no trabalho de engenharia reversa do port
-  original do Spark198rus.
-
-**BLACK** é marca registrada da **Electronic Arts**. Este projeto não inclui o jogo nem arquivos do jogo (o dump é
-necessário e de responsabilidade de quem instala), nem o port do Spark198rus.
-
----
-
-## Acompanhe o projeto
-
-- ▶️ **YouTube:** https://www.youtube.com/c/Darketz
-- 💬 **Discord:** https://discord.gg/HKpgA9ghVE
-- 🐛 **Problemas/sugestões:** abra uma *issue* neste repositório (se for sobre um mod, diga qual e anexe o `black.log`)
-- ⬇️ **Downloads:** [Releases](../../releases) — o ZIP do modloader com os mods
-- 🎮 **Port:** https://github.com/Spark198rus/black-pc
+Licença: **GPL-2.0-or-later** (veja [`LICENSE`](LICENSE)).

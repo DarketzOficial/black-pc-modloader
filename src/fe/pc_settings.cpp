@@ -5,6 +5,7 @@
 #include "fe/pc_settings.h"
 
 #include "common.h"
+#include "blur.h"
 #include "d3d/device.h"
 #include "d3d/host.h"
 #include "fe/bind_list.h"
@@ -60,7 +61,7 @@ std::wstring window_text(int i)
         }
         return L"CUSTOM";
     }
-    if (i == 0) return L"MONITOR";
+    if (i == 0) return L"AUTOMATIC"; // the desktop fit: the game takes the monitor's own size
     int h = kWindowHeights[i], aw = g_cfg.widescreen ? 16 : 4, ah = g_cfg.widescreen ? 9 : 3;
     swprintf(s, 32, L"%d X %d", h * aw / ah, h);
     return s;
@@ -93,9 +94,14 @@ std::wstring scale_text(int i)
     return s;
 }
 
-// A slider row has the 26 positions of the game's slider clip (Sound Setup's bullet bar): field of view 70-120 in
-// steps of 2, brightness and gamma 0.5-3.0 in steps of 0.1, mouse sensitivity 0.25-6.5 in steps of 0.25.
+// A slider row has the 26 positions of the game's slider clip (Sound Setup's bullet bar): brightness and gamma
+// 0.5-3.0 in steps of 0.1, mouse sensitivity 0.25-6.5 in steps of 0.25. The field of view, the viewmodel and the
+// image filters have rows of their own with fewer positions (90-120 and 70-80 in steps of 2, 0-100 in steps of 5);
+// the slider code below uses each row's count.
 constexpr int kSteps = 26;
+constexpr int kFovSteps = 16;   // 90..120 in steps of 2
+constexpr int kVmSteps = 6;     // 70..80 in steps of 2 (80 is the cap: past 70 the arms' ends start to show)
+constexpr int kFilterSteps = 21; // 0..100 in steps of 5 (0 = off)
 int step_of(float v, float first, float step) { return std::clamp((int)std::lround((v - first) / step), 0, kSteps - 1); }
 const float kReverb[] = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f}; // 0 = off
 
@@ -115,12 +121,14 @@ int aniso_get()
         if (kAniso[i] == g_cfg.aniso) return i;
     return 0;
 }
-const int kFpsCaps[] = {0, 30, 60}; // the game presents at most one frame per vblank (~60) anyway: above 60 is a no-op
+// MAX FRAME RATE (the recomp's model): -1 just under the monitor's refresh, 0 unlimited, else that many fps.
+const int kFpsCaps[] = {-1, 0, 30, 60, 75, 90, 120, 144, 165, 240, 360};
+constexpr int kFpsCapCount = sizeof kFpsCaps / sizeof kFpsCaps[0];
 int fps_cap_get()
 {
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < kFpsCapCount; i++)
         if (kFpsCaps[i] == g_cfg.fps_cap) return i;
-    return 0;
+    return 1; // unlimited for a command-line value outside the list
 }
 const int kWalkSpeeds[] = {25, 50, 75, 100};
 int walk_speed_get()
@@ -133,7 +141,6 @@ int walk_speed_get()
     return best;
 }
 
-int shown_fps() { return g_cfg.fps_next ? g_cfg.fps_next : g_cfg.fps; }
 bool shown_wide() { return g_cfg.widescreen_next >= 0 ? g_cfg.widescreen_next != 0 : g_cfg.widescreen; }
 
 struct Row {
@@ -150,12 +157,12 @@ const Row kRows[] = {
     // VIDEO
     {"RESOLUTION", kWindowN, window_get, window_set, window_text, false, true},
     {"RESOLUTION SCALE", kScaleN, scale_get, scale_set, scale_text, false, true},
-    {"FIELD OF VIEW", kSteps, [] { return step_of(g_cfg.fov, 70, 2); },
+    {"FIELD OF VIEW", kFovSteps, [] { return std::clamp(step_of(g_cfg.fov, 90, 2), 0, kFovSteps - 1); },
      [](int i) {
-         g_cfg.fov = 70.0f + 2 * i;
+         g_cfg.fov = 90.0f + 2 * i;
          fov_set(g_cfg.fov);
      },
-     [](int i) { return number(70.0f + 2 * i, L"%.0f") + (i == 0 ? L" (ORIGINAL)" : L""); }, true},
+     [](int i) { return number(90.0f + 2 * i, L"%.0f"); }, true},
     {"BRIGHTNESS", kSteps, [] { return step_of(g_cfg.gain, 0.5f, 0.1f); }, [](int i) { g_cfg.gain = 0.5f + i * 0.1f; },
      [](int i) { return number(0.5f + i * 0.1f); }, true},
     {"GAMMA", kSteps, [] { return step_of(g_cfg.gamma, 0.5f, 0.1f); }, [](int i) { g_cfg.gamma = 0.5f + i * 0.1f; },
@@ -169,12 +176,12 @@ const Row kRows[] = {
          g_cfg.widescreen_next = wide == g_cfg.widescreen ? -1 : wide;
      },
      [](int i) { return std::wstring(i == 0 ? L"16:9" : L"4:3") + ((i == 0) != g_cfg.widescreen ? L" (NEXT START)" : L""); }},
-    {"FRAME RATE", 2, [] { return (int)(shown_fps() == 60); },
+    {"MAX FRAME RATE", kFpsCapCount, fps_cap_get, [](int i) { g_cfg.fps_cap = kFpsCaps[i]; },
      [](int i) {
-         int fps = i ? 60 : 30;
-         g_cfg.fps_next = fps == g_cfg.fps ? 0 : fps;
-     },
-     [](int i) { return std::wstring(i ? L"60 FPS" : L"30 FPS (ORIGINAL)") + ((i ? 60 : 30) != g_cfg.fps ? L" (NEXT START)" : L""); }},
+         if (kFpsCaps[i] == -1) return std::wstring(L"REFRESH RATE");
+         if (kFpsCaps[i] == 0) return std::wstring(L"UNLIMITED");
+         return number((float)kFpsCaps[i], L"%.0f");
+     }},
     {"FILL GEOMETRY SEAMS", 2, [] { return (int)g_cfg.seam_fill; }, [](int i) { g_cfg.seam_fill = i != 0; }, [](int i) { return on_off(i); }},
     {"EFFECTS AT XBOX SIZE", 2, [] { return (int)g_cfg.effects_native; },
      [](int i) {
@@ -215,13 +222,17 @@ const Row kRows[] = {
     // Settings from the update_port sources (see data/PORT_SETTINGS.md), on the pages above.
     {"ANISOTROPIC FILTERING", 5, [] { return aniso_get(); }, [](int i) { g_cfg.aniso = kAniso[i]; },
      [](int i) { return i ? number((float)kAniso[i], L"%.0fX") : std::wstring(L"OFF"); }},
-    {"VIEWMODEL FOV", kSteps, [] { return step_of(g_cfg.viewmodel_fov, 70, 2); },
+    {"VIEWMODEL FOV", kVmSteps, [] { return std::clamp(step_of(g_cfg.viewmodel_fov, 70, 2), 0, kVmSteps - 1); },
      [](int i) { g_cfg.viewmodel_fov = 70.0f + 2 * i; },
      [](int i) { return number(70.0f + 2 * i, L"%.0f") + (i == 0 ? L" (ORIGINAL)" : L""); }, true},
     {"FMV SCALE", 2, [] { return g_cfg.fmv_scale ? 1 : 0; }, [](int i) { g_cfg.fmv_scale = i; },
      [](int i) { return i ? std::wstring(L"4:3") : std::wstring(L"FILL"); }},
-    {"MAX FRAME RATE", 3, [] { return fps_cap_get(); }, [](int i) { g_cfg.fps_cap = kFpsCaps[i]; },
-     [](int i) { return i ? number((float)kFpsCaps[i], L"%.0f") : std::wstring(L"OFF"); }},
+    {"MAX FRAME RATE", kFpsCapCount, fps_cap_get, [](int i) { g_cfg.fps_cap = kFpsCaps[i]; },
+     [](int i) {
+         if (kFpsCaps[i] == -1) return std::wstring(L"REFRESH RATE");
+         if (kFpsCaps[i] == 0) return std::wstring(L"UNLIMITED");
+         return number((float)kFpsCaps[i], L"%.0f");
+     }},
     {"FPS COUNTER", 2, [] { return (int)g_cfg.fpscounter; }, [](int i) { g_cfg.fpscounter = i != 0; },
      [](int i) { return on_off(i); }},
     {"PAUSE WITHOUT FOCUS", 2, [] { return (int)g_cfg.pause_focus; }, [](int i) { g_cfg.pause_focus = i != 0; },
@@ -230,6 +241,33 @@ const Row kRows[] = {
      [](int i) { return i ? std::wstring(L"TOGGLE") : std::wstring(L"HOLD"); }},
     {"WALK SPEED", 4, [] { return walk_speed_get(); }, [](int i) { g_cfg.walk_speed = kWalkSpeeds[i]; },
      [](int i) { return number((float)kWalkSpeeds[i], L"%.0f%%"); }},
+    // Frame generation: the game keeps its 60 fps (the real speed) and the port shows a generated frame in between,
+    // so a 120 Hz display gets 120 pictures. Only when the game's own work fits in half a frame (see
+    // d3d/device.cpp present_frame_gen); otherwise it presents as usual and the row says why.
+    {"FRAME GENERATION", 2, [] { return (int)g_cfg.frame_gen; }, [](int i) { g_cfg.frame_gen = i != 0; },
+     [](int i) { return on_off(i != 0); }},
+    // The reload blur (blur.cpp): the smear the game puts over the picture while a weapon reloads. It is not a
+    // restart-only row -- the reload start reads the port's value, so it applies in play at once, menu or no menu.
+    {"WEAPON BLUR", 2, [] { return (int)g_cfg.weapon_blur; },
+     [](int i) {
+         g_cfg.weapon_blur = i != 0;
+         blur_set(g_cfg.weapon_blur);
+     },
+     [](int i) { return on_off(i); }},
+    // Image filters (d3d/device.cpp: the pass after the gamma ramp, before the anti-aliasing). They apply at once
+    // (the present reads g_cfg every frame), so no restart. 0 = OFF.
+    {"SHARPENING", kFilterSteps, [] { return std::clamp(step_of((float)g_cfg.sharpen, 0, 5), 0, kFilterSteps - 1); },
+     [](int i) { g_cfg.sharpen = i * 5; },
+     [](int i) { return i ? number((float)(i * 5), L"%.0f") : std::wstring(L"OFF"); }, true},
+    {"DETAILS", kFilterSteps, [] { return std::clamp(step_of((float)g_cfg.details, 0, 5), 0, kFilterSteps - 1); },
+     [](int i) { g_cfg.details = i * 5; },
+     [](int i) { return i ? number((float)(i * 5), L"%.0f") : std::wstring(L"OFF"); }, true},
+    {"CLARITY", kFilterSteps, [] { return std::clamp(step_of((float)g_cfg.clarity, 0, 5), 0, kFilterSteps - 1); },
+     [](int i) { g_cfg.clarity = i * 5; },
+     [](int i) { return i ? number((float)(i * 5), L"%.0f") : std::wstring(L"OFF"); }, true},
+    {"VIBRANCE", kFilterSteps, [] { return std::clamp(step_of((float)g_cfg.vibrance, 0, 5), 0, kFilterSteps - 1); },
+     [](int i) { g_cfg.vibrance = i * 5; },
+     [](int i) { return i ? number((float)(i * 5), L"%.0f") : std::wstring(L"OFF"); }, true},
 };
 constexpr int kRowN = sizeof kRows / sizeof kRows[0];
 constexpr int kKeyBindings = 15;
@@ -244,6 +282,11 @@ constexpr int kFpsCounterRow = 23;
 constexpr int kPauseFocusRow = 24;
 constexpr int kAimRow = 25;
 constexpr int kWalkSpeedRow = 26;
+constexpr int kBlurRow = 28;
+constexpr int kSharpenRow = 29;
+constexpr int kDetailsRow = 30;
+constexpr int kClarityRow = 31;
+constexpr int kVibranceRow = 32;
 // Rows past the fixed ones are the mods found in <port>\mods: one ON/OFF line each (see mods.h).
 int mod_count() { return (int)mods::list().size(); }
 
@@ -253,13 +296,15 @@ const std::vector<Group> &groups()
 {
     static const std::vector<Group> g = {
         {"PCVideo", "VIDEO", {0, 1, kAnisoRow, 2, kViewmodelRow, kFmvRow}},
-        // no frame-rate cap row: FRAME RATE (30 / 60) on this page is the port's own limit, and the game presents
-        // at most one frame per vblank anyway (the cap is still read from black.ini / --fps-cap: see PORT_SETTINGS.md)
+        // MAX FRAME RATE (row 7) is live now: 0 = unlimited, -1 = just under the monitor's refresh (recomp model).
+        // Frame generation was removed with the fixed-rate world step; the row is gone from this page.
         // no brightness or gamma row here: the game's own picture menu (picturesetupxbox, its gamma slider writes the
         // game's gamma ramp, which the port's output pass applies) is the one the player uses for those, so the
         // port's own duplicates (BRIGHTNESS / GAMMA, still read from black.ini) were taken off these pages
-        {"PCDisplay", "DISPLAY", {6, 7, kFpsCounterRow, 5}},
-        {"PCGame", "AUDIO AND GAME", {8, 9, 10, 11, 12, kPauseFocusRow}},
+        // FILL GEOMETRY SEAMS and EFFECTS AT XBOX SIZE came here from AUDIO AND GAME (2026-10-18): they are picture
+        // effects, and WEAPON BLUR (blur.cpp) had to fit on a page of six rows
+        {"PCDisplay", "DISPLAY", {6, 7, 8, 9, kFpsCounterRow, 5}},
+        {"PCGame", "AUDIO AND GAME", {10, 11, 12, kBlurRow, kPauseFocusRow}},
         {"PCControls", "CONTROLS", {13, 14, kKeyBindings, kAimRow, kWalkSpeedRow}},
     };
     return g;
@@ -267,16 +312,17 @@ const std::vector<Group> &groups()
 
 const Group &mods_group()
 {
+    // The launcher is where a mod (and the HD pack) is turned on and off: the game's page of the port's own in-play
+    // rows keeps only what applies at once, so nothing on it needs a restart. The mods are still part of the settings
+    // model (label / value / step below) — the launcher writes the same black.ini and the same marker files.
+    // HD TEXTURES (kHdRow) is the launcher's row alone (2026-10-18): it is read from black.ini at boot and the way
+    // in is the launcher's MODS tab, so this page keeps only the in-play rows. It stays in the model (kRows) and in
+    // restart_only() — taking it off this list is what keeps it off both pages.
+    // MODS (2026-10-20, user): the page also holds the four filters and the HUD rows, but the row that
+    // opens it is still the familiar MODS entry. The internal page id stays PCImage so the built front end
+    // and the existing tests keep the same page name; only the label the player sees is MODS.
     static Group g;
-    g = {"PCMods", "MODS", {kHud169Row, kFadeRow, kHdRow}};
-    // a page holds six rows and the port's own three come first: mods beyond the room left are not shown
-    int room = 6 - (int)g.rows.size();
-    for (int i = 0; i < mod_count() && i < room; i++) g.rows.push_back(kRowN + i);
-    if (mod_count() > room) {
-        static int told;
-        if (told++ < 1)
-            logf("mods: %d mods installed, %d of them fit the MODS page", mod_count(), room);
-    }
+    g = {"PCImage", "MODS", {kHud169Row, kFadeRow, kSharpenRow, kDetailsRow, kClarityRow, kVibranceRow}};
     return g;
 }
 
@@ -288,6 +334,11 @@ const char *label(int n)
     int i = n - kRowN;
     return i >= 0 && i < mod_count() ? mods::list()[i].title.c_str() : "";
 }
+
+// The port's own rows are English (the game's own files are English, or the language mod's); on the Portuguese mod
+// (mods.h: mod.ini "lang = ptbr") the name the port puts on the game's menus is Portuguese too, so a translated
+// game does not show one English row among its own.
+const char *title() { return mods::language() == "ptbr" ? "CONF. PC" : "PC SETTINGS"; }
 
 std::wstring value(int n)
 {
@@ -332,23 +383,37 @@ void step(int n, int dir)
 
 bool is_slider(int n) { return n >= 0 && n < kRowN && kRows[n].slider; }
 
-// aspect ratio and frame rate are read by the game at boot; the mods' files are read at boot and when a menu or a
-// level loads, so a change takes effect on the next start
-bool restart_only(int n) { return n == 6 || n == 7 || n == kHdRow || n >= kRowN; }
+// A setting that only takes effect at the next start: the aspect and the HD pack are read by the game at boot, and
+// the mods' files at boot and on a load. The game's own pages leave these out (fe/pages.cpp group_rows,
+// fe/pause_ui.cpp groups): they are set in the launcher, which is the port's way in. MAX FRAME RATE applies live.
+bool restart_only(int n) { return n == 6 || n == kHdRow || n >= kRowN; }
+
+// The rows a page really has: the builder (fe/pages.cpp group_rows), the pause page's own list (fe/pause_ui.cpp) and
+// the values (fill_page above) all take them from here, so a page can never show one setting's name beside another
+// setting's value.
+std::vector<int> page_rows(const Group &g)
+{
+    std::vector<int> out;
+    for (int n : g.rows)
+        if (!restart_only(n)) out.push_back(n);
+    return out;
+}
 
 const char *link(int n) { return n == kKeyBindings ? "PCBindings" : nullptr; }
 
 int slider_pos(int n)
 {
     if (!is_slider(n)) return 0;
-    return std::clamp(kRows[n].get(), 0, kSteps - 1) * 100 / (kSteps - 1);
+    int last = std::max(1, kRows[n].choices - 1);
+    return std::clamp(kRows[n].get(), 0, last) * 100 / last;
 }
 
 void slide(int n, float pos)
 {
     if (!is_slider(n)) return;
     const Row &r = kRows[n];
-    int i = std::clamp((int)std::lround(pos * (kSteps - 1) / 100.0f), 0, kSteps - 1);
+    int last = std::max(1, r.choices - 1);
+    int i = std::clamp((int)std::lround(pos * last / 100.0f), 0, last);
     if (i == r.get()) return;
     r.set(i);
     settings_save();
@@ -358,14 +423,16 @@ void slide(int n, float pos)
 void fill_page(int group)
 {
     const std::vector<Group> &gs = groups();
-    const std::vector<int> *rows = nullptr;
-    if (group >= 0 && group < (int)gs.size()) rows = &gs[group].rows;
-    else if (group == (int)gs.size()) rows = &mods_group().rows; // the MODS page (its own row, after the four groups)
-    if (!rows) return;
-    for (int i = 0; i < fevar::kRows; i++) {
-        int n = i < (int)rows->size() ? (*rows)[i] : -1;
-        fe_var_set(fevar::kValue + i, n >= 0 ? value(n) : L"");
-    }
+    std::vector<int> rows;
+    if (group >= 0 && group < (int)gs.size()) rows = page_rows(gs[group]);
+    else if (group == (int)gs.size()) rows = page_rows(mods_group()); // the MODS page (its own, after the four groups)
+    else return; // not a page of the port's own: the KEY BINDINGS page (100) fills these same values with its rows' keys
+                 // (fe/bind_list.cpp) and the pause page with its own (fe/pause_ui.cpp)
+    // The page's value slot i belongs to the i-th row the builder put on it (fe/pages.cpp group_rows) — the same
+    // list, from the same page_rows call. Filling the slots from the group's own list instead put a later row's
+    // value beside an earlier row once the pages started leaving rows out (the DISPLAY page showed 16:9 beside FPS
+    // COUNTER and 60 FPS beside FULLSCREEN).
+    for (int i = 0; i < fevar::kRows; i++) fe_var_set(fevar::kValue + i, i < (int)rows.size() ? value(rows[i]) : L"");
 }
 
 // a slider takes its start from externObject.FEPCS<setting> when its page is prepared, before the page reports itself,

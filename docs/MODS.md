@@ -62,7 +62,7 @@ ligados, mas só o do idioma em uso entrega arquivo.
 
 - **Sem** o arquivo `.off` na pasta do mod, ele vem **LIGADO**.
 - **Com** `.off`, ele vem **DESLIGADO**.
-- A tela `MODS` (no menu e na pausa) mostra e troca esse estado; quem cria o mod não precisa de instalador.
+- A aba **MODS** do launcher mostra e troca esse estado; quem cria o mod nao precisa de instalador.
 - O estado é por instalação (fica na própria pasta do mod), não no `black.ini`.
 
 ## Reiniciar
@@ -87,7 +87,8 @@ mods\meu-mod\subtitles\02_n.srt
 
 ## Testando
 
-- A tela **`PC SETTINGS > MODS`** lista tudo o que está em `mods\` (e as opções do próprio modloader).
+- A aba **MODS** do launcher lista tudo o que esta em `mods\` e as opcoes do proprio modloader.
+  A pagina **CONF. PC > MODS** do jogo mostra so HUD 16:9, FADING HUD e os quatro filtros.
 - `--no-mods` inicia com **todos** os mods desligados; `--all-mods` liga todos — útil para descobrir qual mod causa um
   problema.
 - O `black.log` (na pasta do port) registra cada mod encontrado, com prioridade e idioma:
@@ -100,7 +101,7 @@ mods\meu-mod\subtitles\02_n.srt
 
 ## Dicas
 
-- Comece com uma pasta só sua (`mods\meu-mod`) e um arquivo de cada vez, testando na tela `MODS`.
+- Comece com uma pasta so sua (`mods\meu-mod`) e um arquivo de cada vez, testando na aba **MODS** do launcher.
 - Para texto/ícones, copie o arquivo original do jogo (`game\...`), edite uma cópia e ponha a cópia em
   `mods\meu-mod\game\...` — assim você sempre pode voltar atrás apagando a pasta.
 - Para vídeos legendados, o nome do arquivo tem de ser o mesmo do vídeo do jogo (maiúsculas/minúsculas não importam no

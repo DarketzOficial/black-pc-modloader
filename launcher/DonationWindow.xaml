@@ -1,0 +1,192 @@
+<Window x:Class="BlackLauncher.DonationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Width="860" SizeToContent="Height"
+        WindowStyle="None" ResizeMode="NoResize"
+        Background="{StaticResource B.Window}"
+        Foreground="{StaticResource B.Fg}"
+        FontFamily="Segoe UI"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Loaded="Window_Loaded">
+
+    <!-- The support page, in the launcher frame: PIX QR code on the left, the other ways to help
+         on the right. Everything is copied from here; no external page is needed for the coins. -->
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="30" ResizeBorderThickness="0" GlassFrameThickness="0"
+                            CornerRadius="0" UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Border x:Name="Frame" BorderBrush="{StaticResource B.Border}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />   <!-- caption -->
+                <RowDefinition Height="Auto" />   <!-- support body -->
+                <RowDefinition Height="Auto" />   <!-- footer -->
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                    BorderThickness="0,0,0,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="CaptionText" Grid.Column="0" Margin="18,0,10,0" VerticalAlignment="Center"
+                               FontSize="12" Foreground="{StaticResource B.FgDim}" TextTrimming="CharacterEllipsis" />
+                    <Button x:Name="CloseCaptionButton" Grid.Column="1" Style="{StaticResource CaptionCloseButton}"
+                            Content="&#xE8BB;" Click="Close_Click"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True" />
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" Margin="26,20,26,18">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="286" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- PIX: the QR code is the direct payment -->
+                <Border Grid.Column="0" Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                        BorderThickness="1" CornerRadius="7" Padding="14" Margin="0,0,20,0">
+                    <StackPanel>
+                        <TextBlock x:Name="PixLabel" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource B.Accent}" />
+                        <Border Background="White" CornerRadius="5" Padding="7" Margin="0,12,0,0"
+                                HorizontalAlignment="Center">
+                            <Image x:Name="QrImage" Source="Assets/qrcode.png" Width="230" Height="230"
+                                   Stretch="Uniform" />
+                        </Border>
+                        <TextBlock x:Name="PixHint" FontSize="11.5" Foreground="{StaticResource B.FgDim}"
+                                   TextWrapping="Wrap" LineHeight="17" Margin="0,12,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- everything else: LivePix + coin addresses -->
+                <ScrollViewer Grid.Column="1" MaxHeight="430" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" PanningMode="VerticalOnly">
+                    <StackPanel>
+                        <TextBlock x:Name="TitleText" FontSize="21" FontWeight="SemiBold"
+                                   Foreground="{StaticResource B.Fg}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="IntroText" FontSize="12.5" Foreground="{StaticResource B.FgDim}"
+                                   TextWrapping="Wrap" LineHeight="18" Margin="0,8,0,0" />
+                        <TextBlock x:Name="OtherLabel" FontSize="10.5" FontWeight="SemiBold"
+                                   Foreground="{StaticResource B.Accent}" Margin="0,18,0,0" />
+
+                        <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                                BorderThickness="1" CornerRadius="7" Padding="12,10" Margin="0,8,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="LivePix" FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource B.Fg}" />
+                                    <TextBlock x:Name="LivePixHint" FontSize="11" Foreground="{StaticResource B.FgDim}"
+                                               TextWrapping="Wrap" Margin="0,2,0,0" />
+                                </StackPanel>
+                                <Button x:Name="LivePixButton" Grid.Column="1" Style="{StaticResource GhostButton}"
+                                        Padding="10,5" FontSize="11" Margin="10,0,0,0"
+                                        Click="LivePix_Click" />
+                            </Grid>
+                        </Border>
+
+                        <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                                BorderThickness="1" CornerRadius="7" Padding="12,9" Margin="0,8,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Bitcoin" FontSize="12.5" FontWeight="SemiBold"
+                                               Foreground="{StaticResource B.Fg}" />
+                                    <Button Grid.Column="1" Style="{StaticResource GhostButton}" Padding="8,3"
+                                            FontSize="10" Content="COPIAR" x:Name="BitcoinCopy" Tag="16FjyBkZm7L95TpuUdS5jjtk9Hh1M2oT4b"
+                                            Click="Copy_Click" />
+                                </Grid>
+                                <TextBlock x:Name="BitcoinAddress" FontFamily="Consolas" FontSize="10.5"
+                                           Foreground="{StaticResource B.FgDim}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                                BorderThickness="1" CornerRadius="7" Padding="12,9" Margin="0,8,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Dogecoin" FontSize="12.5" FontWeight="SemiBold"
+                                               Foreground="{StaticResource B.Fg}" />
+                                    <Button Grid.Column="1" Style="{StaticResource GhostButton}" Padding="8,3"
+                                            FontSize="10" Content="COPIAR" x:Name="DogecoinCopy" Tag="DK47Ao1n4aDTiSsqFGQv2Unv2SFktb6NY9"
+                                            Click="Copy_Click" />
+                                </Grid>
+                                <TextBlock x:Name="DogecoinAddress" FontFamily="Consolas" FontSize="10.5"
+                                           Foreground="{StaticResource B.FgDim}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                                BorderThickness="1" CornerRadius="7" Padding="12,9" Margin="0,8,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ethereum" FontSize="12.5" FontWeight="SemiBold"
+                                               Foreground="{StaticResource B.Fg}" />
+                                    <Button Grid.Column="1" Style="{StaticResource GhostButton}" Padding="8,3"
+                                            FontSize="10" Content="COPIAR" x:Name="EthereumCopy" Tag="0x27d9a44c3d786ecfc5c637508c19c63d0dfb3533"
+                                            Click="Copy_Click" />
+                                </Grid>
+                                <TextBlock x:Name="EthereumAddress" FontFamily="Consolas" FontSize="10.5"
+                                           Foreground="{StaticResource B.FgDim}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                                BorderThickness="1" CornerRadius="7" Padding="12,9" Margin="0,8,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="USDT (TRC20)" FontSize="12.5" FontWeight="SemiBold"
+                                               Foreground="{StaticResource B.Fg}" />
+                                    <Button Grid.Column="1" Style="{StaticResource GhostButton}" Padding="8,3"
+                                            FontSize="10" Content="COPIAR" x:Name="UsdtCopy" Tag="TH4X8vBZ5Y6epwPVMxZgQxXDmDTmoHTwCq"
+                                            Click="Copy_Click" />
+                                </Grid>
+                                <TextBlock x:Name="UsdtAddress" FontFamily="Consolas" FontSize="10.5"
+                                           Foreground="{StaticResource B.FgDim}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <Border Grid.Row="2" Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                    BorderThickness="0,1,0,0" Padding="20,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="ThanksText" Grid.Column="0" VerticalAlignment="Center" FontSize="12"
+                               Foreground="{StaticResource B.FgDim}" TextWrapping="Wrap" />
+                    <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource PrimaryButton}"
+                            Click="Close_Click" IsDefault="True" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

@@ -54,6 +54,20 @@ O `black.log` (ao lado do `black.exe`) tem tudo o que o port fez. `black.exe --h
 (`--log`, `--verbose`, `--trace`, `--strict`, `--screenshot`, `--shot-every`, `--press`, `--press-file`, `--watch`,
 `--perf-at`, `--dump-textures`, …). As opções de jogo ficam em `PC SETTINGS`, dentro do jogo.
 
+## Launcher (WPF)
+
+O launcher fica em `launcher\` (projeto .NET Framework 4.8/WPF). Para compilar e copiar o
+`blacklauncher.exe` para a pasta do port:
+
+```powershell
+cd launcher
+.\build.ps1 -Deploy
+```
+
+Os assets do launcher (`logo.png`, `qrcode.png`, `favicon.ico`) ficam em `launcher\Assets\`.
+O README especifico do launcher, com a arquitetura de cada janela, esta em
+`launcher\README.md`.
+
 ## Onde fica cada coisa
 
 | Arquivo | O que faz |

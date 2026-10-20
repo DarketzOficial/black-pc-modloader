@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Dev tool: packs the launcher's mp3s into the encrypted file it reads (launcher.sounds), and checks
+       that the result really plays. This is the packer the launcher does not ship: it reuses the
+       launcher's own SoundBank code, so the file written here is the file the launcher reads.
+
+       Use:  sounds.exe pack  <portDir> [sourceDir]   pack into <portDir>\launcher.sounds
+             sounds.exe check <portDir>               load it and open every clip with the media stack  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>sounds</AssemblyName>
+    <RootNamespace>BlackLauncher</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The launcher's own SoundBank: the same code packs and unpacks, so the two cannot drift apart. -->
+    <ProjectReference Include="..\..\BlackLauncher.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
