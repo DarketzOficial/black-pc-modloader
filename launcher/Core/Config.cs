@@ -11,7 +11,7 @@ namespace BlackLauncher
     /// reverb, frame generation, HD textures) handled explicitly. The port rewrites black.ini on exit,
     /// so anything the launcher keeps for itself lives in launcher.ini instead.
     /// </summary>
-    public sealed class Config
+    public sealed class Config : ISettingsStore
     {
         public string PortDir { get; private set; }
         public string IniPath { get; private set; }

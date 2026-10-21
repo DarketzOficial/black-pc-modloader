@@ -14,8 +14,11 @@ namespace BlackLauncher
     public sealed class UiContext
     {
         public Config Cfg;
+        public ISettingsStore Settings;
         public bool Pt;
         public List<Mod> Mods;
+        public string ModsRoot;
+        public Func<string> HdDefaultDir;
         public Action Dirty = () => { };
         public Action Rebuild = () => { };
         public Action RefreshBindings = () => { };   // the key-bindings panel redraws itself
@@ -150,19 +153,19 @@ namespace BlackLauncher
         // ---------------------------------------------------------------- kinds ---
         private static FrameworkElement MakeBool(SettingItem item, UiContext ctx)
         {
-            bool on = item.Pref ? ctx.Cfg.GetPref(item.Key, item.Default) != "0" : ctx.Cfg.GetBool(item.Key);
+            bool on = item.Pref ? ctx.Cfg.GetPref(item.Key, item.Default) != "0" : ctx.Settings.GetBool(item.Key);
             var cb = new CheckBox { Style = (Style)Application.Current.Resources["ToggleSwitch"], IsChecked = on };
             cb.Checked += (s, e) =>
             {
                 // A launcher preference is not a black.ini setting: it saves itself and never marks the tab dirty.
                 if (item.Pref) { ctx.Cfg.SetPref(item.Key, "1"); ctx.Cfg.SavePrefs(); }
-                else { ctx.Cfg.SetBool(item.Key, true); ctx.Dirty(); }
+                else { ctx.Settings.SetBool(item.Key, true); ctx.Dirty(); }
                 ctx.Refresh();
             };
             cb.Unchecked += (s, e) =>
             {
                 if (item.Pref) { ctx.Cfg.SetPref(item.Key, "0"); ctx.Cfg.SavePrefs(); }
-                else { ctx.Cfg.SetBool(item.Key, false); ctx.Dirty(); }
+                else { ctx.Settings.SetBool(item.Key, false); ctx.Dirty(); }
                 ctx.Refresh();
             };
             return cb;
@@ -170,7 +173,7 @@ namespace BlackLauncher
 
         private static FrameworkElement MakeSlider(SettingItem item, UiContext ctx)
         {
-            double value = ctx.Cfg.GetNumber(item.Key);
+            double value = ctx.Settings.GetNumber(item.Key);
             if (value < item.Min) value = item.Min;
             if (value > item.Max) value = item.Max;
 
@@ -189,7 +192,7 @@ namespace BlackLauncher
             slider.ValueChanged += (s, e) =>
             {
                 text.Text = Format(item, e.NewValue);
-                ctx.Cfg.SetNumber(item.Key, e.NewValue, item.Format);
+                ctx.Settings.SetNumber(item.Key, e.NewValue, item.Format);
                 ctx.Dirty();
                 ctx.Refresh();
             };
@@ -218,7 +221,7 @@ namespace BlackLauncher
         {
             var combo = new ComboBox { Style = (Style)Application.Current.Resources["DarkComboBox"], MinWidth = 190 };
             int sel = 0;
-            string current = ctx.Cfg.Get(item.Key);
+            string current = ctx.Settings.Get(item.Key);
             for (int i = 0; i < item.Choices.Length; i++)
             {
                 combo.Items.Add(item.Choices[i].Pt == item.Choices[i].En ? item.Choices[i].En : (ctx.Pt ? item.Choices[i].Pt : item.Choices[i].En));
@@ -228,7 +231,7 @@ namespace BlackLauncher
             combo.SelectionChanged += (s, e) =>
             {
                 if (combo.SelectedIndex < 0) return;
-                ctx.Cfg.Set(item.Key, item.Choices[combo.SelectedIndex].Value);
+                ctx.Settings.Set(item.Key, item.Choices[combo.SelectedIndex].Value);
                 ctx.Dirty();
                 ctx.Refresh();
             };
@@ -238,7 +241,7 @@ namespace BlackLauncher
         private static FrameworkElement MakeResolution(SettingItem item, UiContext ctx)
         {
             var combo = new ComboBox { Style = (Style)Application.Current.Resources["DarkComboBox"], MinWidth = 190 };
-            string cur = ctx.Cfg.GetWindow();
+            string cur = ctx.Settings.Get(item.Key);
             var values = new List<string>();
             int sel = 0;
             foreach (var c in item.Choices) { values.Add(c.Value); combo.Items.Add(ctx.Pt ? c.Pt : c.En); }
@@ -256,7 +259,7 @@ namespace BlackLauncher
             combo.SelectionChanged += (s, e) =>
             {
                 if (combo.SelectedIndex < 0) return;
-                ctx.Cfg.SetWindow(values[combo.SelectedIndex]);
+                ctx.Settings.Set(item.Key, values[combo.SelectedIndex]);
                 ctx.Dirty();
             };
             return combo;
@@ -342,18 +345,20 @@ namespace BlackLauncher
 
         private static FrameworkElement MakeHd(SettingItem item, UiContext ctx)
         {
-            var cb = new CheckBox { Style = (Style)Application.Current.Resources["ToggleSwitch"], IsChecked = ctx.Cfg.GetHd() };
+            var cb = new CheckBox { Style = (Style)Application.Current.Resources["ToggleSwitch"], IsChecked = !string.IsNullOrEmpty(ctx.Settings.Get(item.Key)) };
             var note = new TextBlock { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, FontSize = 12, Foreground = FgDim };
             Action refresh = () =>
             {
-                if (!ctx.Cfg.GetHd()) { note.Text = ""; return; }
+                string path = ctx.Settings.Get(item.Key);
+                cb.IsChecked = !string.IsNullOrEmpty(path);
+                if (string.IsNullOrEmpty(path)) { note.Text = ""; return; }
                 int matched, total;
-                HdPack.Progress(ctx.Cfg.HdDefaultDir(), out matched, out total);
+                HdPack.Progress(path, out matched, out total);
                 note.Text = total > 0 ? Loc.HdReady(matched, total) : "";
             };
             ctx.RegisterRefresh(refresh);
-            cb.Checked += (s, e) => { ctx.Cfg.SetHd(true); ctx.Dirty(); ctx.Refresh(); };
-            cb.Unchecked += (s, e) => { ctx.Cfg.SetHd(false); ctx.Dirty(); ctx.Refresh(); };
+            cb.Checked += (s, e) => { if (string.IsNullOrEmpty(ctx.Settings.Get(item.Key))) ctx.Settings.Set(item.Key, ctx.HdDefaultDir()); ctx.Dirty(); ctx.Refresh(); };
+            cb.Unchecked += (s, e) => { ctx.Settings.Set(item.Key, ""); ctx.Dirty(); ctx.Refresh(); };
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
             sp.Children.Add(cb);
             sp.Children.Add(note);
@@ -366,10 +371,10 @@ namespace BlackLauncher
             var tb = new TextBox
             {
                 Style = (Style)Application.Current.Resources["DarkTextBox"], Width = item.Browse ? 300 : 420,
-                Text = ctx.Cfg.Get(item.Key)
+                Text = ctx.Settings.Get(item.Key)
             };
-            tb.LostFocus += (s, e) => { ctx.Cfg.Set(item.Key, tb.Text.Trim()); ctx.Dirty(); };
-            tb.KeyDown += (s, e) => { if (e.Key == Key.Enter) { ctx.Cfg.Set(item.Key, tb.Text.Trim()); ctx.Dirty(); Keyboard.ClearFocus(); } };
+            tb.LostFocus += (s, e) => { ctx.Settings.Set(item.Key, tb.Text.Trim()); ctx.Dirty(); ctx.Refresh(); };
+            tb.KeyDown += (s, e) => { if (e.Key == Key.Enter) { ctx.Settings.Set(item.Key, tb.Text.Trim()); ctx.Dirty(); ctx.Refresh(); Keyboard.ClearFocus(); } };
             if (!item.Browse) return tb;
 
             var button = new Button
@@ -380,7 +385,7 @@ namespace BlackLauncher
                 FontSize = 11,
                 Margin = new Thickness(10, 0, 0, 0)
             };
-            button.Click += (s, e) => BrowseFolder(tb, ctx);
+            button.Click += (s, e) => BrowseFolder(tb, ctx, item.Key);
             Hoverable(button);
 
             var clear = new Button
@@ -398,7 +403,7 @@ namespace BlackLauncher
             clear.Click += (s, e) =>
             {
                 tb.Text = "";
-                ctx.Cfg.Set("hd_textures", "");
+                ctx.Settings.Set(item.Key, "");
                 ctx.Dirty();
             };
             Hoverable(clear);
@@ -424,11 +429,11 @@ namespace BlackLauncher
         /// Pick the pack's map.csv with the native Windows dialog (Explorer). The folder that holds
         /// the chosen map.csv is what black.ini stores; empty still means "HD textures off".
         /// </summary>
-        private static void BrowseFolder(TextBox tb, UiContext ctx)
+        private static void BrowseFolder(TextBox tb, UiContext ctx, string key)
         {
-            string current = ctx.Cfg.Get("hd_textures");
-            string initial = Directory.Exists(current) ? current : ctx.Cfg.HdDefaultDir();
-            if (!Directory.Exists(initial)) initial = ctx.Cfg.PortDir;
+            string current = ctx.Settings.Get(key);
+            string initial = Directory.Exists(current) ? current : ctx.HdDefaultDir();
+            if (!Directory.Exists(initial)) initial = ctx.Settings == ctx.Cfg ? ctx.Cfg.PortDir : ctx.ModsRoot;
             var dialog = new OpenFileDialog
             {
                 Title = Loc.AdvBrowseHdTitle,
@@ -443,8 +448,9 @@ namespace BlackLauncher
             string folder = Path.GetDirectoryName(dialog.FileName);
             if (string.IsNullOrEmpty(folder)) return;
             tb.Text = folder;
-            ctx.Cfg.Set("hd_textures", folder);
+            ctx.Settings.Set(key, folder);
             ctx.Dirty();
+            ctx.Refresh();
         }
 
         // ------------------------------------------------------------- bindings ---
@@ -584,7 +590,7 @@ namespace BlackLauncher
             fill = () =>
             {
                 host.Children.Clear();
-                var mods = Mods.Scan(ctx.Cfg.PortDir);
+                var mods = string.IsNullOrEmpty(ctx.ModsRoot) ? new List<Mod>() : Mods.Scan(ctx.ModsRoot);
                 ctx.Mods = mods;
 
                 if (mods.Count == 0)

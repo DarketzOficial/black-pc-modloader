@@ -1,7 +1,7 @@
 # BLACK PC — ModLoader
 
 **ModLoader 1.4.10** para o **[BLACK PC port](https://github.com/Spark198rus/black-pc)** de
-[Spark198rus](https://github.com/Spark198rus/black-pc).
+[Spark198rus](https://github.com/Spark198rus/black-pc). O launcher também pode iniciar uma instalação separada do **BLACK-XBERecomp**, sem instalar o ModLoader DLL nela.
 
 O projeto é o port do **BLACK** (Xbox NTSC-U) para Windows com uma camada de mods e um
 launcher próprio. O jogo **não** vem no pacote: você precisa do seu dump em `game\`.
@@ -12,15 +12,14 @@ launcher próprio. O jogo **não** vem no pacote: você precisa do seu dump em `
 
 | | |
 |---|---|
-| **Funciona** | BLACK PC port do Spark198rus — https://github.com/Spark198rus/black-pc |
-| **Não funciona** | BLACK-XBERecomp do TGP482 (projeto diferente, sem `blackrt.dll`) |
+| **Jogo principal** | BLACK PC port do Spark198rus — https://github.com/Spark198rus/black-pc |
+| **Segundo alvo do launcher** | BLACK-XBERecomp do TGP482; selecione a pasta com `BLACK.exe` e os arquivos da recompilação |
 | **Versão do port** | 0.2.0 |
 | **Jogo** | BLACK Xbox NTSC-U com dump em `game\` (o pacote não inclui o jogo) |
 | **Sistema** | Windows 10/11, 32 ou 64 bits |
 | **Hardware mínimo** | 4 GB de RAM, 1 GB de VRAM (Direct3D 9), 5 GB livres |
 
-O `blackrt.dll` deste projeto substitui o DLL do port. Não misture os arquivos com o
-BLACK-XBERecomp.
+O `blackrt.dll` deste projeto substitui o DLL do port e continua exclusivo dele. Ao escolher o XBE Recomp no launcher, ele abre o `BLACK.exe` daquela pasta, usa o `black.toml` e os mods próprios da recompilação; não copia DLL nem altera os arquivos do port.
 
 ---
 

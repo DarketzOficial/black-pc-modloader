@@ -27,6 +27,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />   <!-- our title bar -->
                 <RowDefinition Height="Auto" />   <!-- banner -->
+                <RowDefinition Height="Auto" />   <!-- selected game -->
                 <RowDefinition Height="*" />      <!-- tabs -->
                 <RowDefinition Height="Auto" />   <!-- footer -->
             </Grid.RowDefinitions>
@@ -100,11 +101,32 @@
                 </Grid>
             </Border>
 
+            <!-- The same launcher can start either game; the selection never changes either install. -->
+            <Border Grid.Row="2" Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+                    BorderThickness="0,0,0,1">
+                <Grid Margin="24,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="260" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="TargetLabel" Grid.Column="0" Margin="0,0,12,0" VerticalAlignment="Center"
+                               Foreground="{StaticResource B.FgDim}" FontSize="12" />
+                    <ComboBox x:Name="TargetCombo" Grid.Column="1" Style="{StaticResource DarkComboBox}"
+                              SelectionChanged="Target_Changed" />
+                    <Button x:Name="TargetBrowseButton" Grid.Column="2" Style="{StaticResource GhostButton}"
+                            Content="Localizar recompilação" Click="BrowseRecomp_Click" Margin="10,0,0,0" Padding="10,6" />
+                    <TextBlock x:Name="TargetVersion" Grid.Column="3" Margin="16,0,0,0" VerticalAlignment="Center"
+                               Foreground="{StaticResource B.FgDim}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                </Grid>
+            </Border>
+
             <!-- ============================= tabs ============================= -->
-            <TabControl x:Name="Tabs" Grid.Row="2" Style="{StaticResource DarkTabControl}" />
+            <TabControl x:Name="Tabs" Grid.Row="3" Style="{StaticResource DarkTabControl}" />
 
             <!-- ============================= footer ============================= -->
-            <Border Grid.Row="3" Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
+            <Border Grid.Row="4" Background="{StaticResource B.Panel}" BorderBrush="{StaticResource B.Border}"
                     BorderThickness="0,1,0,0">
                 <Grid Margin="20,12">
                     <Grid.ColumnDefinitions>
@@ -142,7 +164,7 @@
             </Border>
 
             <!-- the save notice: shown for a moment in the middle of the top, above the tab's own content -->
-            <Border x:Name="Toast" Grid.Row="2" Visibility="Collapsed" Opacity="0" IsHitTestVisible="False"
+            <Border x:Name="Toast" Grid.Row="3" Visibility="Collapsed" Opacity="0" IsHitTestVisible="False"
                     HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,8,0,0" Padding="20,10"
                     CornerRadius="8" Background="#F21B1C20" BorderBrush="{StaticResource B.Accent}" BorderThickness="1">
                 <StackPanel Orientation="Horizontal">

@@ -92,6 +92,150 @@ namespace BlackLauncher
             new PadButton("RB (botão preto)", "RB (black button)", "— (o jogo não usa)", "— (not used by the game)"),
         };
 
+        public static List<Section> BuildRecomp()
+        {
+            var sections = new List<Section>();
+            var graphics = new Section { Id = "recomp-graphics", Pt = "VÍDEO E GRÁFICOS", En = "VIDEO AND GRAPHICS" };
+            graphics.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "display_mode",
+                Pt = "Modo de exibição", En = "Display mode",
+                Choices = new[] { new Choice("windowed", "Janela", "Windowed"), new Choice("borderless", "Sem bordas", "Borderless"), new Choice("fullscreen", "Tela cheia", "Fullscreen") }
+            });
+            graphics.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Resolution, Key = "resolution", Pt = "Resolução", En = "Resolution",
+                HelpPt = "Usa o tamanho atual do monitor ou um dos mesmos modos oferecidos no port de PC.",
+                HelpEn = "Uses the current monitor size or one of the same modes offered by the PC port.",
+                Choices = new[]
+                {
+                    new Choice("", "AUTOMÁTICO", "AUTOMATIC"),
+                    new Choice("854x480", "854 X 480", "854 X 480"),
+                    new Choice("1280x720", "1280 X 720", "1280 X 720"),
+                    new Choice("1366x768", "1366 X 768", "1366 X 768"),
+                    new Choice("1600x900", "1600 X 900", "1600 X 900"),
+                    new Choice("1920x1080", "1920 X 1080", "1920 X 1080"),
+                    new Choice("2560x1440", "2560 X 1440", "2560 X 1440"),
+                    new Choice("3840x2160", "3840 X 2160", "3840 X 2160")
+                }
+            });
+            graphics.Items.Add(new SettingItem { Kind = ItemKind.Slider, Key = "render_percent", Min = 20, Max = 200, Step = 5, Format = "0", Suffix = "%", Pt = "Escala de renderização", En = "Render scale" });
+            graphics.Items.Add(new SettingItem { Kind = ItemKind.Bool, Key = "vsync", Pt = "Sincronização vertical", En = "V-Sync" });
+            graphics.Items.Add(new SettingItem { Kind = ItemKind.Bool, Key = "hdr_output", Pt = "Saída HDR", En = "HDR output" });
+            graphics.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "fsr_mode", Pt = "FSR", En = "FSR",
+                Choices = new[] { new Choice("0", "Desativado", "Off"), new Choice("1", "Qualidade", "Quality"), new Choice("2", "Balanceado", "Balanced"), new Choice("3", "Desempenho", "Performance"), new Choice("4", "Desempenho ultra", "Ultra performance") }
+            });
+            graphics.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "ambient_occlusion", Pt = "Oclusão ambiental", En = "Ambient occlusion",
+                Choices = new[] { new Choice("0", "Desativada", "Off"), new Choice("1", "SSAO", "SSAO"), new Choice("2", "GTAO", "GTAO") }
+            });
+            graphics.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "msaa", Pt = "MSAA", En = "MSAA",
+                Choices = new[] { new Choice("0", "Desativado", "Off"), new Choice("2", "2x", "2x"), new Choice("4", "4x", "4x"), new Choice("8", "8x", "8x") }
+            });
+            graphics.Items.Add(new SettingItem { Kind = ItemKind.Bool, Key = "smaa", Pt = "SMAA", En = "SMAA" });
+            AddRecompSlider(graphics, "image_sharpening", "Nitidez", "Sharpening", 0, 100, 5, "%");
+            AddRecompSlider(graphics, "image_details", "Detalhes", "Details", 0, 100, 5, "%");
+            AddRecompSlider(graphics, "image_clarity", "Clareza", "Clarity", 0, 100, 5, "%");
+            AddRecompSlider(graphics, "image_vibrance", "Vibração de cores", "Color vibrance", 0, 100, 5, "%");
+            AddRecompSlider(graphics, "draw_distance", "Distância de desenho", "Draw distance", 1, 8, 1, "x", "0");
+            AddRecompSlider(graphics, "fov", "Campo de visão", "Field of view", 45, 140, 1, "°", "0");
+            AddRecompSlider(graphics, "viewmodel_fov", "Campo de visão da arma", "Weapon field of view", 45, 140, 1, "°", "0");
+            sections.Add(graphics);
+
+            var game = new Section { Id = "recomp-game", Pt = "JOGO E CONTROLES", En = "GAME AND CONTROLS" };
+            AddRecompBool(game, "skip_intros", "Pular introduções", "Skip intros");
+            AddRecompBool(game, "fps_counter", "Contador de FPS", "FPS counter");
+            AddRecompBool(game, "reload_blur", "Desfoque ao recarregar", "Reload blur");
+            AddRecompBool(game, "pause_on_focus_loss", "Pausar ao perder o foco", "Pause on focus loss");
+            AddRecompBool(game, "hud_fade", "Fade do HUD", "Fading HUD");
+            AddRecompBool(game, "infinite_ammo", "Munição infinita", "Infinite ammo");
+            AddRecompBool(game, "silver_weapons", "Armas prateadas", "Silver weapons");
+            AddRecompBool(game, "invert_mouse", "Inverter eixo do mouse", "Invert mouse axis");
+            AddRecompBool(game, "hold_aim", "Mirar enquanto segura", "Hold to aim");
+            AddRecompBool(game, "aim_assist", "Assistência de mira", "Aim assist");
+            AddRecompBool(game, "controller_hold_aim", "Mirar segurando no controle", "Hold to aim on controller");
+            AddRecompBool(game, "menu_animations", "Animações dos menus", "Menu animations");
+            AddRecompSlider(game, "mouse_sensitivity", "Sensibilidade do mouse", "Mouse sensitivity", 0, 10, 0.1, "", "0.0");
+            AddRecompSlider(game, "controller_sensitivity", "Sensibilidade do controle", "Controller sensitivity", 0, 10, 0.1, "", "0.0");
+            AddRecompSlider(game, "walk_speed", "Velocidade ao caminhar", "Walk speed", 10, 100, 5, "%", "0");
+            AddRecompSlider(game, "rumble_intensity", "Intensidade da vibração", "Rumble intensity", 10, 200, 5, "%", "0");
+            AddRecompSlider(game, "fps_cap", "Limite de FPS", "FPS cap", 0, 360, 1, "", "0");
+            game.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "fmv_scale", Pt = "Proporção dos vídeos", En = "Video aspect ratio",
+                Choices = new[] { new Choice("0", "Preencher a tela", "Fill screen"), new Choice("1", "Manter 4:3", "Keep 4:3") }
+            });
+            game.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "audio_output", Pt = "Saída de áudio", En = "Audio output",
+                Choices = new[] { new Choice("0", "Automática", "Automatic"), new Choice("1", "Estéreo", "Stereo"), new Choice("2", "Surround", "Surround"), new Choice("3", "Mono", "Mono") }
+            });
+            game.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "anisotropic_filtering", Pt = "Filtro anisotrópico", En = "Anisotropic filtering",
+                Choices = new[] { new Choice("0", "Desativado", "Off"), new Choice("2", "2x", "2x"), new Choice("4", "4x", "4x"), new Choice("8", "8x", "8x"), new Choice("16", "16x", "16x") }
+            });
+            sections.Add(game);
+
+            var language = new Section { Id = "recomp-language", Pt = "IDIOMA E LEGENDAS", En = "LANGUAGE AND SUBTITLES" };
+            language.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "language", Pt = "Idioma", En = "Language",
+                Choices = new[] { new Choice("int", "English", "English"), new Choice("fra", "Français", "Français"), new Choice("deu", "Deutsch", "Deutsch"), new Choice("ita", "Italiano", "Italiano"), new Choice("esp", "Español", "Español"), new Choice("pt-BR", "Português (Brasil)", "Português (Brasil)"), new Choice("id", "Bahasa Indonesia", "Bahasa Indonesia"), new Choice("ru", "Русский", "Русский") }
+            });
+            AddRecompBool(language, "subtitles_enabled", "Legendas", "Subtitles");
+            AddRecompSlider(language, "subtitle_size", "Tamanho da legenda", "Subtitle size", 80, 160, 5, "%", "0");
+            AddRecompBool(language, "subtitle_bold", "Negrito", "Bold");
+            language.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "subtitle_color", Pt = "Cor da legenda", En = "Subtitle color",
+                Choices = new[] { new Choice("0", "Branco", "White"), new Choice("1", "Amarelo", "Yellow") }
+            });
+            language.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Choice, Key = "subtitle_shadow", Pt = "Sombra da legenda", En = "Subtitle shadow",
+                Choices = new[] { new Choice("0", "Desativada", "Off"), new Choice("1", "Suave", "Subtle"), new Choice("2", "Forte", "Strong") }
+            });
+            AddRecompBool(language, "subtitle_background", "Fundo da legenda", "Subtitle background");
+            sections.Add(language);
+
+            var mods = new Section { Id = "recomp-mods", HasMods = true, Pt = "MODS", En = "MODS" };
+            mods.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.HdTextures, Key = "hd_textures_ui", Pt = "Texturas HD", En = "HD textures",
+                HelpPt = "Ativa as substituições de texturas compatíveis da pasta selecionada.",
+                HelpEn = "Enables compatible texture replacements from the selected folder."
+            });
+            mods.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Text, Key = "hd_textures_ui", Browse = true,
+                Pt = "Pasta das texturas HD", En = "HD textures folder",
+                HelpPt = "Escolha a pasta que contém map.csv e os arquivos DDS compatíveis. Vazio desativa.",
+                HelpEn = "Choose the folder containing map.csv and compatible DDS files. Empty disables it."
+            });
+            sections.Add(mods);
+            return sections;
+        }
+
+        private static void AddRecompBool(Section section, string key, string pt, string en)
+        {
+            section.Items.Add(new SettingItem { Kind = ItemKind.Bool, Key = key, Pt = pt, En = en });
+        }
+
+        private static void AddRecompSlider(Section section, string key, string pt, string en,
+                                            double min, double max, double step, string suffix, string format = "0")
+        {
+            section.Items.Add(new SettingItem
+            {
+                Kind = ItemKind.Slider, Key = key, Min = min, Max = max, Step = step, Suffix = suffix, Format = format, Pt = pt, En = en
+            });
+        }
+
         public static List<Section> Build(bool pt)
         {
             var s = new List<Section>();

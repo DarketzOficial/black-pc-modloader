@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -21,12 +22,18 @@ namespace BlackLauncher
         public static MainWindow Current { get; private set; }
 
         private Config _cfg;
+        private RecompConfig _recompCfg;
         private UiContext _ctx;
         private List<Mod> _mods;
+        private string _recompRoot;
+        private GameLauncher.TargetKind _targetKind = GameLauncher.TargetKind.PcPort;
         private List<string> _recoveredCrashes;
         private bool _pt = true;
         private bool _ready;
         private bool _dirty;
+        private bool _portDirty;
+        private bool _recompDirty;
+        private bool _updatingTargetSelector;
 
         // key capture: the button waiting for a key, plus what it showed before
         private KeyBindings.Action _capAction;
@@ -53,10 +60,18 @@ namespace BlackLauncher
             _normal = (Brush)Application.Current.Resources["B.Fg"];
 
             string portDir = PortDir();
-            _recoveredCrashes = LogStore.MigratePortRoot(portDir); // root logs go to log\; crashes are offered to the player
-            Updater.CleanTemp(portDir);      // a cancelled/failed install leaves its working folder here
             _cfg = Config.Load(portDir);
+            if (_cfg.GetPref("target", "pc") == "recomp") _targetKind = GameLauncher.TargetKind.Recomp;
+            _recoveredCrashes = _targetKind == GameLauncher.TargetKind.PcPort
+                ? LogStore.MigratePortRoot(portDir) : new List<string>();
+            if (_targetKind == GameLauncher.TargetKind.PcPort) Updater.CleanTemp(portDir);
             _mods = Mods.Scan(portDir);
+            _recompRoot = FindRecompRoot(portDir, _cfg.GetPref("recomp_dir", ""));
+            if (!string.IsNullOrEmpty(_recompRoot))
+            {
+                try { _recompCfg = RecompConfig.Load(_recompRoot); }
+                catch (Exception) { _recompCfg = null; }
+            }
 
             Title = Loc.WindowTitle;
             VersionText.Text = Loc.Product;
@@ -74,11 +89,13 @@ namespace BlackLauncher
             _pt = _cfg.GetPref("lang", defLang) != "en";
             Loc.Pt = _pt;
 
-            _ctx = new UiContext { Cfg = _cfg, Pt = _pt, Dirty = MarkDirty, Rebuild = Rebuild };
+            _ctx = new UiContext { Cfg = _cfg, Settings = _cfg, Pt = _pt, Dirty = MarkDirty, Rebuild = Rebuild,
+                                   HdDefaultDir = () => _targetKind == GameLauncher.TargetKind.Recomp ? _recompCfg.HdDefaultDir() : _cfg.HdDefaultDir() };
             _ctx.Mods = _mods;
             _ctx.ShowChangelog = ShowChangelog;
 
             InitLanguageCombo();
+            InitTargetSelector();
             BuildFooter();
             BuildTabs();
             RestoreGeometry();
@@ -87,9 +104,9 @@ namespace BlackLauncher
             WireChromeSounds();
 
             _ready = true;
-            string missing = GameLauncher.MissingReason(portDir);
-            SetStatus(missing != null ? Loc.T("Falta: ", "Missing: ") + missing
-                                      : (_cfg.Ini.Exists ? Loc.LoadedFrom + " " + Path.GetFileName(_cfg.IniPath) : Loc.NoIni));
+            SetStatus(_targetKind == GameLauncher.TargetKind.Recomp
+                ? Loc.T("Configuração da recompilação: ", "Recomp settings: ") + Path.Combine(_recompRoot ?? "", "black.toml")
+                : (_cfg.Ini.Exists ? Loc.LoadedFrom + " " + Path.GetFileName(_cfg.IniPath) : Loc.NoIni));
 
             PreviewKeyDown += OnCaptureKey;
             PreviewMouseDown += OnCaptureMouse;
@@ -112,6 +129,149 @@ namespace BlackLauncher
             LangCombo.Items.Add("Português (BR)");
             LangCombo.Items.Add("English");
             LangCombo.SelectedIndex = _pt ? 0 : 1;
+        }
+
+        private void InitTargetSelector()
+        {
+            UpdateTargetSelectorLabels();
+            TargetCombo.SelectedIndex = _targetKind == GameLauncher.TargetKind.Recomp ? 1 : 0;
+            TargetBrowseButton.MouseEnter += (s, e) => Audio.Hover();
+            TargetCombo.MouseEnter += (s, e) => Audio.Hover();
+            SwitchTarget(_targetKind, false);
+        }
+
+        private void UpdateTargetSelectorLabels()
+        {
+            if (TargetCombo == null) return;
+            int selected = TargetCombo.SelectedIndex;
+            _updatingTargetSelector = true;
+            TargetLabel.Text = Loc.T("JOGO", "GAME");
+            TargetBrowseButton.Content = Loc.T("LOCALIZAR RECOMPILAÇÃO", "BROWSE FOR RECOMP");
+            TargetCombo.Items.Clear();
+            TargetCombo.Items.Add(Loc.T("BLACK PC — ModLoader", "BLACK PC — ModLoader"));
+            TargetCombo.Items.Add(Loc.T("BLACK — XBE Recomp", "BLACK — XBE Recomp"));
+            if (selected >= 0) TargetCombo.SelectedIndex = selected;
+            _updatingTargetSelector = false;
+        }
+
+        private static string FindRecompRoot(string portDir, string saved)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(saved) && GameLauncher.IsRecomp(saved)) return Path.GetFullPath(saved);
+                string parent = Directory.GetParent(Path.GetFullPath(portDir))?.FullName;
+                if (string.IsNullOrEmpty(parent)) return null;
+                var found = Directory.GetDirectories(parent).Where(GameLauncher.IsRecomp).Take(2).ToArray();
+                return found.Length == 1 ? found[0] : null;
+            }
+            catch (Exception) { return null; }
+        }
+
+        private void Target_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            if (!_ready || _updatingTargetSelector) return;
+            if (TargetCombo.SelectedIndex == 0)
+            {
+                _cfg.SetPref("target", "pc");
+                _cfg.SavePrefs();
+                SwitchTarget(GameLauncher.TargetKind.PcPort, true);
+                return;
+            }
+            if (TargetCombo.SelectedIndex == 1)
+            {
+                if (string.IsNullOrEmpty(_recompRoot) || !GameLauncher.IsRecomp(_recompRoot))
+                {
+                    if (!BrowseRecomp()) { TargetCombo.SelectedIndex = 0; return; }
+                }
+                _cfg.SetPref("target", "recomp");
+                _cfg.SetPref("recomp_dir", _recompRoot);
+                _cfg.SavePrefs();
+                SwitchTarget(GameLauncher.TargetKind.Recomp, true);
+            }
+        }
+
+        private void BrowseRecomp_Click(object sender, RoutedEventArgs e)
+        {
+            if (BrowseRecomp())
+            {
+                TargetCombo.SelectedIndex = 1;
+                _cfg.SetPref("target", "recomp");
+                _cfg.SetPref("recomp_dir", _recompRoot);
+                _cfg.SavePrefs();
+                SwitchTarget(GameLauncher.TargetKind.Recomp, true);
+            }
+        }
+
+        private bool BrowseRecomp()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = Loc.T("Selecione BLACK.exe da recompilação", "Select the Recomp BLACK.exe"),
+                Filter = "BLACK.exe|BLACK.exe",
+                CheckFileExists = true,
+                Multiselect = false,
+                InitialDirectory = Directory.Exists(_recompRoot) ? _recompRoot : _cfg.PortDir
+            };
+            if (dialog.ShowDialog(this) != true) return false;
+            string root = Path.GetDirectoryName(dialog.FileName);
+            if (!GameLauncher.IsRecomp(root))
+            {
+                ThemedDialog.Show(this,
+                    Loc.T("Essa pasta não parece ser uma instalação do XBE Recomp (BLACK.exe e arquivos do jogo são necessários).",
+                          "This folder does not look like an XBE Recomp installation (BLACK.exe and game files are required)."),
+                    ThemedDialog.Result.Ok, "OK", showCancel: false);
+                return false;
+            }
+            _recompRoot = Path.GetFullPath(root);
+            try { _recompCfg = RecompConfig.Load(_recompRoot); }
+            catch (Exception ex)
+            {
+                _recompCfg = null;
+                ThemedDialog.Show(this, Loc.T("Não foi possível ler black.toml: ", "Could not read black.toml: ") + ex.Message,
+                                  ThemedDialog.Result.Ok, "OK", showCancel: false);
+                return false;
+            }
+            return true;
+        }
+
+        private void SwitchTarget(GameLauncher.TargetKind kind, bool rebuild)
+        {
+            _targetKind = kind;
+            bool recomp = kind == GameLauncher.TargetKind.Recomp;
+            if (recomp && _recompCfg == null && !string.IsNullOrEmpty(_recompRoot))
+            {
+                try { _recompCfg = RecompConfig.Load(_recompRoot); }
+                catch (Exception ex) { SetStatus(Loc.T("Não foi possível ler black.toml: ", "Could not read black.toml: ") + ex.Message); }
+            }
+            _ctx.Settings = recomp && _recompCfg != null ? (ISettingsStore)_recompCfg : _cfg;
+            try
+            {
+                _mods = recomp && string.IsNullOrEmpty(_recompRoot) ? new List<Mod>()
+                    : Mods.Scan(recomp ? _recompRoot : _cfg.PortDir);
+            }
+            catch (Exception) { _mods = new List<Mod>(); }
+            _ctx.Mods = _mods;
+            _ctx.ModsRoot = recomp ? _recompRoot : _cfg.PortDir;
+            UpdateTargetDisplay();
+            UpdateBadge();
+            if (UpdateButton != null) UpdateButton.Visibility = recomp ? Visibility.Collapsed : Visibility.Visible;
+            if (rebuild && _ready) BuildTabs();
+        }
+
+        private void UpdateTargetDisplay()
+        {
+            if (TargetVersion == null) return;
+            if (_targetKind == GameLauncher.TargetKind.Recomp)
+                TargetVersion.Text = string.IsNullOrEmpty(_recompRoot) ? Loc.T("Localize a pasta da recompilação", "Browse for the Recomp folder")
+                    : Loc.T("XBE Recomp · ", "XBE Recomp · ") + GameLauncher.RecompVersion(_recompRoot) + " · " +
+                      GameLauncher.RecompImageIdentity(_recompRoot) + " · " + _recompRoot;
+            else
+            {
+                string version = "";
+                try { version = FileVersionInfo.GetVersionInfo(GameLauncher.BlackExe(_cfg.PortDir)).ProductVersion; } catch (Exception) { }
+                TargetVersion.Text = Loc.T("PC ModLoader · ", "PC ModLoader · ") +
+                    (string.IsNullOrWhiteSpace(version) ? Loc.T("versão desconhecida", "version unknown") : version) + " · " + _cfg.PortDir;
+            }
         }
 
         private void BuildFooter()
@@ -138,7 +298,7 @@ namespace BlackLauncher
         {
             foreach (var e in new FrameworkElement[] { MinButton, MaxButton, CloseButton, UpdateButton, MuteButton,
                                                        RestoreButton, SaveButton, PlayButton, LangCombo, CreditLink,
-                                                       YouTubeButton, DiscordButton, DonateButton })
+                                                       YouTubeButton, DiscordButton, DonateButton, TargetBrowseButton, TargetCombo })
                 if (e != null) e.MouseEnter += (s, a) => Audio.Hover();
         }
 
@@ -173,7 +333,28 @@ namespace BlackLauncher
         {
             int keep = Tabs.SelectedIndex;
             Tabs.Items.Clear();
-            foreach (var s in Schema.Build(_pt))
+            if (_targetKind == GameLauncher.TargetKind.Recomp && _recompCfg == null)
+            {
+                Tabs.Items.Add(new TabItem
+                {
+                    Header = Loc.T("RECOMP", "RECOMP"),
+                    Content = new Border
+                    {
+                        Padding = new Thickness(24),
+                        Child = new TextBlock
+                        {
+                            Text = Loc.T("Localize BLACK.exe e os arquivos do jogo para editar as opções da recompilação.",
+                                         "Locate BLACK.exe and the game files to edit Recomp settings."),
+                            TextWrapping = TextWrapping.Wrap,
+                            Foreground = (Brush)Application.Current.Resources["B.FgDim"],
+                            FontSize = 14
+                        }
+                    }
+                });
+                Tabs.SelectedIndex = 0;
+                return;
+            }
+            foreach (var s in (_targetKind == GameLauncher.TargetKind.Recomp ? Schema.BuildRecomp() : Schema.Build(_pt)))
             {
                 var tab = new TabItem { Header = _pt ? s.Pt : s.En, Content = UiBuilder.BuildSection(s, _ctx) };
                 tab.MouseEnter += (s2, a) => Audio.Hover();
@@ -191,11 +372,15 @@ namespace BlackLauncher
 
         private void UpdateBadge()
         {
-            string missing = GameLauncher.MissingReason(_cfg.PortDir);
+            string missing = _targetKind == GameLauncher.TargetKind.Recomp
+                ? GameLauncher.RecompMissingReason(_recompRoot)
+                : GameLauncher.MissingReason(_cfg.PortDir);
             GameBadge.Visibility = missing != null ? Visibility.Visible : Visibility.Collapsed;
-            GameBadgeText.Text = Loc.GameMissingBadge;
+            GameBadgeText.Text = _targetKind == GameLauncher.TargetKind.Recomp
+                ? Loc.T("RECOMPILAÇÃO NÃO LOCALIZADA", "RECOMP NOT FOUND") : Loc.GameMissingBadge;
             PlayButton.IsEnabled = missing == null;
             PlayButton.ToolTip = missing;
+            UpdateTargetDisplay();
         }
 
         // -------------------------------------------------------------- geometry ---
@@ -238,6 +423,8 @@ namespace BlackLauncher
         private void MarkDirty()
         {
             _dirty = true;
+            if (_targetKind == GameLauncher.TargetKind.Recomp) _recompDirty = true;
+            else _portDirty = true;
             if (SaveButton != null) SaveButton.Foreground = _accent;
             if (_ready) SetStatus(Loc.T("Há alterações não salvas.", "You have unsaved changes."));
         }
@@ -247,12 +434,40 @@ namespace BlackLauncher
         // ---------------------------------------------------------------- actions ---
         private void Save_Click(object sender, RoutedEventArgs e)
         {
-            _cfg.Save();
-            _dirty = false;
+            string error;
+            if (!SaveDirty(out error))
+            {
+                ThemedDialog.Show(this, error, ThemedDialog.Result.Ok, "OK", showCancel: false);
+                return;
+            }
             SaveButton.Foreground = _normal;
-            SetStatus(Loc.Saved + "  ·  " + _cfg.IniPath);
+            string savedPath = _targetKind == GameLauncher.TargetKind.Recomp
+                ? (!string.IsNullOrEmpty(_recompRoot) ? Path.Combine(_recompRoot, "black.toml") : Loc.T("Recomp não localizado", "Recomp not found"))
+                : _cfg.IniPath;
+            SetStatus(Loc.Saved + "  ·  " + savedPath);
             Audio.Saved();
             ShowToast(Loc.Saved);
+        }
+
+        private bool SaveDirty(out string error)
+        {
+            error = null;
+            try
+            {
+                if (_portDirty) _cfg.Save();
+                if (_recompDirty)
+                {
+                    if (_recompCfg == null) { error = Loc.T("Selecione a pasta da recompilação antes de salvar.", "Select the Recomp folder before saving."); return false; }
+                    _recompCfg.Save();
+                }
+                _portDirty = _recompDirty = _dirty = false;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = Loc.T("Não foi possível salvar as configurações: ", "Could not save settings: ") + ex.Message;
+                return false;
+            }
         }
 
         private void Mute_Click(object sender, RoutedEventArgs e)
@@ -303,6 +518,7 @@ namespace BlackLauncher
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            if (_targetKind == GameLauncher.TargetKind.Recomp) return;
             // A crash log found in the port root means black.exe was started without the hidden
             // watcher (a direct launch, or the watcher was killed). Offer the same report once.
             ShowRecoveredCrash();
@@ -310,7 +526,7 @@ namespace BlackLauncher
             // The updater saved the release notes; show them once for the new version that just opened.
             ShowChangelogIfNew();
 
-            if (_cfg.GetPref("update_auto", "1") == "0") return;
+            if (_targetKind == GameLauncher.TargetKind.Recomp || _cfg.GetPref("update_auto", "1") == "0") return;
             await Task.Delay(1000);
             if (_closing || !IsLoaded) return;
             CheckForUpdates(false);
@@ -440,8 +656,8 @@ namespace BlackLauncher
             // Only write black.ini when there really is something unsaved: an update should not rewrite the
             // player's settings file just because the launcher is about to restart.
             if (!_dirty) return;
-            _cfg.Save();
-            _dirty = false;
+            string error;
+            if (!SaveDirty(out error)) throw new IOException(error);
             if (SaveButton != null) SaveButton.Foreground = _normal;
         }
 
@@ -465,19 +681,31 @@ namespace BlackLauncher
 
         private void Play_Click(object sender, RoutedEventArgs e)
         {
-            _cfg.Save();
-            _dirty = false;
+            string saveError;
+            if (!SaveDirty(out saveError))
+            {
+                ThemedDialog.Show(this, saveError, ThemedDialog.Result.Ok, "OK", showCancel: false);
+                return;
+            }
 
-            string missing = GameLauncher.MissingReason(_cfg.PortDir);
+            string missing = _targetKind == GameLauncher.TargetKind.Recomp
+                ? GameLauncher.RecompMissingReason(_recompRoot)
+                : GameLauncher.MissingReason(_cfg.PortDir);
             if (missing != null)
             {
                 ThemedDialog.Show(this, Loc.MissingGameHint(missing), ThemedDialog.Result.Ok, "OK", showCancel: false);
                 return;
             }
 
-            // The visible launcher closes now; the hidden watcher starts the game, archives its log
-            // and, if it crashes, offers to send the report. See CrashWatcher.
             string error;
+            if (_targetKind == GameLauncher.TargetKind.Recomp)
+            {
+                if (GameLauncher.StartRecomp(_recompRoot, out error)) { Application.Current.Shutdown(); return; }
+                ThemedDialog.Show(this, Loc.MissingGameHint(error ?? ""), ThemedDialog.Result.Ok, "OK", showCancel: false);
+                return;
+            }
+
+            // The visible launcher closes now; the hidden watcher starts the PC port and handles its logs.
             if (GameLauncher.StartWatchdog(_cfg.PortDir, out error))
             {
                 Application.Current.Shutdown();
@@ -490,9 +718,19 @@ namespace BlackLauncher
         {
             var r = ThemedDialog.Show(this, Loc.RestoreConfirmBody, ThemedDialog.Result.Ok, Loc.T("RESTAURAR", "RESTORE"));
             if (r != ThemedDialog.Result.Ok) return;
-            _cfg.ResetToDefaults();
-            foreach (var m in Mods.Scan(_cfg.PortDir)) Mods.SetOn(m, true); // a fresh install has its mods on
-            MarkDirty();
+            if (_targetKind == GameLauncher.TargetKind.Recomp)
+            {
+                if (_recompCfg == null) { SetStatus(Loc.T("Localize a pasta da recompilação primeiro.", "Browse for the Recomp folder first.")); return; }
+                _recompCfg.ResetToDefaults();
+                _recompDirty = _dirty = true;
+            }
+            else
+            {
+                _cfg.ResetToDefaults();
+                _portDirty = _dirty = true;
+            }
+            foreach (var m in _mods) Mods.SetOn(m, true);
+            SaveButton.Foreground = _accent;
             Rebuild();
             SetStatus(Loc.T("Padrões restaurados (ainda não salvos).", "Defaults restored (not saved yet)."));
         }
@@ -507,6 +745,7 @@ namespace BlackLauncher
             _cfg.SetPref("lang", _pt ? "pt" : "en");
             _cfg.SavePrefs();
             BuildFooter();
+            UpdateTargetSelectorLabels();
             Rebuild();
         }
 
@@ -621,7 +860,17 @@ namespace BlackLauncher
                                           ThemedDialog.Result.Yes, Loc.T("SALVAR", "SAVE"), Loc.T("NÃO SALVAR", "DON'T SAVE"),
                                           Loc.T("CANCELAR", "CANCEL"));
                 if (r == ThemedDialog.Result.Cancel) { e.Cancel = true; _closing = false; return; }
-                if (r == ThemedDialog.Result.Yes) { _cfg.Save(); _dirty = false; }
+                if (r == ThemedDialog.Result.Yes)
+                {
+                    string error;
+                    if (!SaveDirty(out error))
+                    {
+                        e.Cancel = true;
+                        _closing = false;
+                        ThemedDialog.Show(this, error, ThemedDialog.Result.Ok, "OK", showCancel: false);
+                        return;
+                    }
+                }
             }
 
             // remember where and how the window was, for the next time

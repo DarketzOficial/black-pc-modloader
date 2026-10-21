@@ -1,8 +1,8 @@
 # BLACK PC — Launcher
 
-The configuration window that ships inside the modloader package. It is the player-facing
-front end: instead of opening the game directly, the player opens the launcher, sets things
-up in the tabs, and presses **PLAY** — which saves `black.ini` and starts `black.exe`.
+The configuration window that ships inside the modloader package. It is the single player-facing
+front end for the BLACK PC port and BLACK-XBERecomp. The selected target controls which settings
+file is edited and which executable **PLAY** starts.
 
 It is a small C# **WPF** app targeting **.NET Framework 4.8**, so the executable (~0.5 MB)
 runs on any Windows 10/11 without installing a runtime. The exe carries the game icon and the
@@ -48,6 +48,11 @@ runs on any Windows 10/11 without installing a runtime. The exe carries the game
   (see [The sound file](#the-sound-file)).
 - **JOGAR / PLAY** saves and starts `black.exe`. It stays greyed out (with the reason on hover)
   until `black.exe` and `game\default.xbe` are actually there.
+- The target selector can also open BLACK-XBERecomp. It finds one matching sibling installation
+  automatically or lets the player select its `BLACK.exe`; Recomp options are saved in that
+  installation's `black.toml`, and its mods stay in that installation's `mods\` folder.
+- Selecting Recomp starts its own `BLACK.exe` directly. The PC port's `black.ini`, DLL, updater,
+  crash watcher and game files are not used for that launch.
 - Language **PT-BR / English**, remembered in `launcher.ini` (not `black.ini`, which the port
   rewrites on exit).
 
@@ -72,7 +77,7 @@ Small touches that make it feel like an app and not a form:
   bar did still works — dragging, double-click to maximise, resizing from the edges, Aero snap and the
   taskbar label — because the window is still a normal one; the chrome only redraws its non-client area.
 
-The game itself still has its `PC SETTINGS` menus, and both read the same `black.ini`. What
+For the PC port, the game itself still has its `PC SETTINGS` menus, and both read the same `black.ini`. What
 differs is the split: a setting that only takes effect at the next start of the game (aspect
 ratio, the HD pack, the mods) is **only** in the launcher — the game's pages leave those
 rows out — so nothing in the game ever says "restart". MAX FRAME RATE is in both and applies
@@ -90,6 +95,21 @@ game's pages have no room left): 1x keeps the game's own LOD and cull distances,
 and ground cover in reach longer, and 0.2x-0.75x shortens everything for slower PCs — below 1x the port's fog closes
 in to that distance (20 m at 0.2x), free of charge (the game's own vertex fog), so what the shorter cull drops
 fades into the fog instead of popping in (`draw_distance`, `--draw-distance N`).
+
+## Recomp target
+
+When **BLACK — XBE Recomp** is selected, the same launcher shows the display, graphics, gameplay,
+audio and subtitle options supported by that build. It writes only matching top-level values to
+the selected Recomp's `black.toml`, preserving unrelated keys and tables. File mods use that
+installation's `mods\` folder and the Recomp's native file overlay. The ModLoader DLL is not
+copied or loaded, and the PC port remains unchanged. Recomp does not use the PC port's crash
+watcher or updater; unsupported PC-only controls are hidden for that target.
+The target line shows executable version metadata when present and the selected XBE's SHA-1 when
+`assets\default.xbe` is available. The hash identifies that file; it does not certify that a build
+accepts it.
+The same resolution presets and HD texture toggle/folder picker are available for both targets.
+Recomp writes width/height to its settings and reads compatible `.dds` packs from the selected
+folder (default `textures\` beside `BLACK.exe`); unsupported PC-port-only options remain hidden.
 
 ## Crash reports and logs
 
