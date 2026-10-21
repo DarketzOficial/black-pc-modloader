@@ -1,0 +1,183 @@
+# Como fazer mods para o BLACK PC (modloader)
+> Este é o guia do formato de mod. O port e o launcher são distribuídos à parte.
+
+
+Um mod é **uma pasta dentro de `mods\`** na raiz do port. Nada no jogo é alterado: quando o jogo abre um arquivo, o
+modloader entrega o arquivo do mod no lugar do arquivo original. Por isso dá para ligar e desligar um mod na tela
+`MODS` sem reinstalar nada.
+
+## Estrutura
+
+```
+BLACK\                         (pasta do port, onde está o black.exe)
+  mods\
+    meu-mod\
+      mod.ini                  (opcional)
+      .off                     (opcional: marca o mod como DESLIGADO)
+      game\                    (os arquivos que substituem os do jogo)
+        language\strings\MainUS.bin
+        export\frontend\Core.bin
+        videos\02_n.xmv
+        ...
+      subtitles\               (opcional: legendas .srt desenhadas por cima dos vídeos)
+        02_n.srt
+```
+
+- O caminho dentro de **`game\`** é o mesmo caminho do arquivo no jogo. `game\language\strings\MainUS.bin` substitui
+  `language\strings\MainUS.bin` do jogo.
+- O arquivo do mod precisa estar **no formato que o jogo espera** (o modloader só entrega o arquivo; não converte nada).
+- O nome da pasta do mod é o identificador dele nos logs.
+- Qualquer arquivo do CD do jogo pode ser substituído (textos, ícones, mapas de menu, vídeos, arquivos de nível…).
+
+## `mod.ini`
+
+Arquivo de texto, uma opção por linha, `chave = valor`. Chaves (sem diferenciar maiúsculas/minúsculas):
+
+| Chave | O que é |
+|---|---|
+| `name` | Nome mostrado na tela `MODS`. Sem ele, o modloader usa o nome da pasta (com espaços). |
+| `priority` | Número. Quando dois mods trazem **o mesmo arquivo**, o de **maior prioridade** ganha. O padrão é `0`. |
+| `lang` | Idioma do mod (`en`, `ptbr`, …). Opcional. Veja abaixo. |
+
+Exemplo:
+
+```ini
+name = MINHA TEXTURA DO MURRO
+priority = 5
+lang = ptbr
+```
+
+### Idiomas (`lang`)
+
+O jogo lê **um** arquivo de texto (`MainUS.bin`), então dois mods de texto de idiomas diferentes não podem valer ao
+mesmo tempo. O modloader resolve assim:
+
+1. o idioma em uso é o do **mod ligado de maior prioridade que declara `lang`** (sem nenhum, é `en`, os arquivos do
+   próprio jogo);
+2. um mod que declara **outro** idioma fica **bloqueado**: os arquivos dele **não são entregues** (na tela `MODS` ele
+   aparece como `OFF (IDIOMA)`).
+
+É por isso que o mod `KEYBOARD PROMPTS (EN)` (inglês) não atrapalha o `PT-BR TEXT + KEYBOARD`: os dois podem ficar
+ligados, mas só o do idioma em uso entrega arquivo.
+
+## Ligado / desligado
+
+- **Sem** o arquivo `.off` na pasta do mod, ele vem **LIGADO**.
+- **Com** `.off`, ele vem **DESLIGADO**.
+- A aba **MODS** do launcher mostra e troca esse estado; quem cria o mod nao precisa de instalador.
+- O estado é por instalação (fica na própria pasta do mod), não no `black.ini`.
+
+## Reiniciar
+
+O jogo lê alguns arquivos uma única vez, ao iniciar (a tabela de textos, por exemplo). Ao ligar ou desligar um mod de
+**arquivo**, a tela mostra **`(REINICIAR)`** e o modloader **reinicia o jogo sozinho** quando você volta ao menu
+principal (leva uns 2 segundos e volta no menu). Nada do seu progresso é perdido — o reinício só acontece com o menu
+principal na tela.
+
+## Legendas
+
+O modloader desenha legendas `.srt` por cima dos vídeos, **se o mod tiver uma pasta `subtitles\`**:
+
+```
+mods\meu-mod\subtitles\02_n.srt
+```
+
+- Um `.srt` por filme, com o **mesmo nome do vídeo** (`02_n.xmv` → `02_n.srt`).
+- Formato SRT normal (o mesmo que qualquer editor de legenda exporta), **UTF-8**.
+- O tempo é contado desde o início do filme.
+- As legendas ligam/desligam junto com o mod. Se quiser desligar só as legendas, use `subtitles = 0` no `black.ini`.
+
+## ModKit e pacote `.bmod`
+
+O **ModKit** (`modkit`) é o gerenciador de mods do kit. Ele não faz parte do
+port e não é necessário para o jogo rodar: serve para criar a pasta, exportar e
+importar pacotes. O port continua lendo apenas `mod.ini`; o `mod.json` é
+metadado do kit e o loader ignora esse arquivo.
+
+Um pacote `.bmod` é um ZIP com esta raiz:
+
+```text
+meu-mod-1.0.0.bmod
+  mod.json
+  mod.ini
+  game\
+    language\strings\MainUS.bin
+    ...
+  subtitles\          (opcional)
+    02_n.srt
+```
+
+Exemplo de `mod.json`:
+
+```json
+{
+  "format": 1,
+  "id": "meu-mod",
+  "name": "MEU MOD",
+  "version": "1.0.0",
+  "author": "Autor",
+  "description": "O que o mod muda.",
+  "lang": "ptbr",
+  "priority": 5,
+  "requires": [],
+  "conflicts": [],
+  "files": [
+    {
+      "path": "mod.ini",
+      "size": 42,
+      "sha256": "..."
+    },
+    {
+      "path": "game/language/strings/MainUS.bin",
+      "size": 12345,
+      "sha256": "..."
+    }
+  ]
+}
+```
+
+Regras do manifesto:
+
+- `format` é `1`.
+- `id` é o nome da pasta em `mods\`: minúsculo, sem espaços/acentos (`a-z`,
+  `0-9`, `.`, `_`, `-`). Não reutilize o `id` para outro mod.
+- `name`, `version` e `files` são obrigatórios.
+- `priority` e `lang` precisam ser iguais aos do `mod.ini`.
+- Cada arquivo do ZIP (menos o próprio `mod.json`) precisa estar em `files`, com
+  `size` em bytes e `sha256` em hexadecimal. O importador recusa arquivo extra,
+  caminho absoluto, `..`, hash errado e tamanho diferente.
+- `.off` não entra no pacote: o estado é da instalação, não do mod.
+- `game\` segue o mesmo caminho do jogo; o port não converte formato.
+
+O importador do ModKit:
+
+1. exige `mod.json` na raiz e confere todos os hashes;
+2. instala em `mods\<id>`; se já existir, move o antigo para `mods\.backup`;
+3. mostra conflitos de arquivo: maior `priority` vence; no empate, a ordem da
+   pasta;
+4. pode instalar o pacote desligado (`.off`) para revisão. A importação em lote
+   sempre entra desligada.
+5. não executa nada do pacote; só copia arquivos declarados.
+
+## Testando
+
+- A aba **MODS** do launcher lista tudo o que esta em `mods\` e as opcoes do proprio modloader.
+  A pagina **CONF. PC > MODS** do jogo mostra so HUD 16:9, FADING HUD e os quatro filtros.
+- `--no-mods` inicia com **todos** os mods desligados; `--all-mods` liga todos — útil para descobrir qual mod causa um
+  problema.
+- O `black.log` (na pasta do port) registra cada mod encontrado, com prioridade e idioma:
+  ```
+  mods: xboxiconstokeys (XBOX ICONS AS KEYS) priority 0
+  mods: xcontroltokeyboard (KEYBOARD PROMPTS (EN)) priority 0 lang en - off (another language is being played)
+  ```
+- O **conflito de arquivos** é resolvido pela `priority` (maior ganha) e, no empate, pela ordem das pastas: o `black.log`
+  mostra qual mod entregou o arquivo quando o jogo o abre (`mods::resolve`).
+
+## Dicas
+
+- Comece com uma pasta so sua (`mods\meu-mod`) e um arquivo de cada vez, testando na aba **MODS** do launcher.
+- Para texto/ícones, copie o arquivo original do jogo (`game\...`), edite uma cópia e ponha a cópia em
+  `mods\meu-mod\game\...` — assim você sempre pode voltar atrás apagando a pasta.
+- Para vídeos legendados, o nome do arquivo tem de ser o mesmo do vídeo do jogo (maiúsculas/minúsculas não importam no
+  Windows, mas mantenha o padrão).
+- Mods **de arquivo** pesados (texturas/vídeos) aumentam o uso de disco/RAM; prefira o formato que o jogo já usa.

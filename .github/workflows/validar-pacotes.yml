@@ -1,0 +1,39 @@
+name: Validar pacotes de mods
+
+on:
+  pull_request:
+    paths:
+      - "comunidade/pacotes/**"
+      - "ferramentas/validar_pacote.py"
+      - ".github/workflows/validar-pacotes.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "comunidade/pacotes/**"
+      - "ferramentas/validar_pacote.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validar pacotes .bmod
+        shell: bash
+        run: |
+          shopt -s nullglob
+          pacotes=(comunidade/pacotes/*.bmod)
+          if [ ${#pacotes[@]} -eq 0 ]; then
+            echo "Nenhum pacote .bmod em comunidade/pacotes."
+            exit 0
+          fi
+          python ferramentas/validar_pacote.py "${pacotes[@]}"

@@ -1,0 +1,9 @@
+Coloque aqui os arquivos que o mod substitui.
+
+O caminho tem de ser igual ao caminho dentro do jogo. Exemplos:
+
+  game\language\strings\MainUS.bin
+  game\export\frontend\Core.bin
+  game\videos\02_n.xmv
+
+Mantenha a pasta "game" e apague este aviso depois de colocar os arquivos.

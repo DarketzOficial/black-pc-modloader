@@ -1,0 +1,15 @@
+EXEMPLO DE MOD
+
+1. Copie esta pasta para a pasta "mods" da instalação do port e renomeie para o
+   nome do seu mod.
+2. Coloque os arquivos do jogo dentro de "game", mantendo o caminho original.
+   Exemplo: game\language\strings\MainUS.bin
+3. Se for usar legendas, coloque os arquivos .srt em "subtitles", com o mesmo
+   nome do vídeo. Exemplo: subtitles\02_n.srt para videos\02_n.xmv
+4. Apague o arquivo ".off" para o mod começar ligado.
+5. Abra o ModKit (modkit/dist/blackmodkit.exe), escolha a pasta do port,
+   confira o mod na lista e use "Validar" e "Abrir jogo". Se preferir, use a aba
+   MODS do launcher completo.
+
+Os arquivos de exemplo dentro de "game" e "subtitles" são só avisos. Apague-os
+quando colocar os arquivos de verdade.

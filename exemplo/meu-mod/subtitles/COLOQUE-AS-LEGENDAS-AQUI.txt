@@ -1,0 +1,7 @@
+Coloque aqui as legendas .srt.
+
+O nome tem de ser o mesmo do vídeo, trocando a extensão:
+
+  videos\02_n.xmv  ->  subtitles\02_n.srt
+
+Use UTF-8 e apague este aviso depois de colocar as legendas.

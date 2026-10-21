@@ -1,0 +1,6 @@
+bin/
+obj/
+dist/
+modkit.ini
+*.user
+.vs/
