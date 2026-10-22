@@ -35,8 +35,8 @@ mod de exemplo e o fluxo de envio da comunidade.
 
    | Asset | Quando usar |
    |---|---|
-   | `BLACK-PC-Modloader-1.4.16-com-mods.zip` | Primeira instalação. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
-   | `BLACK-PC-Modloader-1.4.16.zip` | Pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
+   | `BLACK-PC-Modloader-1.4.17-com-mods.zip` | Primeira instalação. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
+   | `BLACK-PC-Modloader-1.4.17.zip` | Pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
    | `BLACK-PC-ModKit-1.0.0.zip` | Kit de desenvolvimento com o `blackmodkit.exe` pronto para usar. Não é necessário para jogar. |
 
    Os nomes dos pacotes do ModLoader mudam conforme a versão. Use sempre os
@@ -67,10 +67,18 @@ atualização. A atualização preserva:
 - `log\`.
 
 As notas de cada versão ficam na própria release e em
-[`docs/RELEASE-NOTES-1.4.16.md`](docs/RELEASE-NOTES-1.4.16.md).
+[`docs/RELEASE-NOTES-1.4.17.md`](docs/RELEASE-NOTES-1.4.17.md).
 
 ---
 
+## Novidades da 1.4.17
+
+- Corrigido o crash ao aplicar um efeito com entrada inválida na tabela (`0x001A7992`).
+- Corrigido o crash no stream de áudio quando o ponteiro do formato está inválido (`0x00085A8A`).
+- Aviso explícito para builds do jogo não suportadas (o port exige o `default.xbe` NTSC-U).
+- Port atualizado para **0.2.1**.
+
+---
 ## O que tem neste repositório
 
 | Pasta / arquivo | Conteúdo |
@@ -278,7 +286,7 @@ com o manifesto.
 |---|---|
 | **Funciona** | BLACK PC port do Spark198rus — https://github.com/Spark198rus/black-pc |
 | **Não funciona** | BLACK-XBERecomp do TGP482 (projeto diferente, sem `blackrt.dll`) |
-| **Versão do port** | 0.2.0 |
+| **Versão do port** | 0.2.1 |
 | **Jogo** | BLACK Xbox NTSC-U com dump em `game\` (o pacote não inclui o jogo) |
 | **Sistema** | Windows 10/11, 32 ou 64 bits |
 | **Hardware mínimo** | 4 GB de RAM, 1 GB de VRAM (Direct3D 9), 5 GB livres |
@@ -307,7 +315,7 @@ Encontrou um problema no kit ou em um mod? Abra uma issue usando os modelos em
 
 - Formato completo do mod: [`docs/MODS.md`](docs/MODS.md).
 - Política de releases e assets: [`docs/RELEASES.md`](docs/RELEASES.md).
-- Notas da versão atual: [`docs/RELEASE-NOTES-1.4.16.md`](docs/RELEASE-NOTES-1.4.16.md).
+- Notas da versão atual: [`docs/RELEASE-NOTES-1.4.17.md`](docs/RELEASE-NOTES-1.4.17.md).
 - Como enviar: [`comunidade/COMO-ENVIAR.md`](comunidade/COMO-ENVIAR.md).
 - Checklist do mantenedor: [`comunidade/CHECKLIST-MANTENEDOR.md`](comunidade/CHECKLIST-MANTENEDOR.md).
 - Fonte do ModKit: [`modkit/`](modkit/).
