@@ -11,9 +11,10 @@ jogadores (pasta `logplayers`) e o aviso de build do jogo nao suportada.
 
 - **Efeito com entrada invalida na tabela** (`black-crash-20261022-144210.log`):
   o jogo lia `[entrada + 0x39C]` com a entrada valendo `6` (arma 8 dada pelo trainer)
-  e caia em `0x001A7992`. O guard em `0x001A7992` agora valida a faixa do ponteiro
-  (`0x10000..0x84000000`); fora dela, devolve `-1` (sem efeito), sem desreferenciar.
-  Efeitos com entrada valida continuam iguais.
+  e caia em `0x001A7992`. O guard em `0x001A7992` agora so aceita ponteiros na
+  imagem do XBE (`0x10000..0x600000`) ou na RAM do jogo (`0x80000000..0x84000000`);
+  fora dessas faixas, devolve `-1` (sem efeito), sem desreferenciar. Efeitos com
+  entrada valida continuam iguais.
 
 - **Stream de audio com formato liberado** (`black-crash-20261022-002452.log`):
   depois de 764 s em `level_05`, o mixer comparava 16 bytes de um formato cujo
