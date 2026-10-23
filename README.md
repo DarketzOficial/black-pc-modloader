@@ -35,8 +35,10 @@ mod de exemplo e o fluxo de envio da comunidade.
 
    | Asset | Quando usar |
    |---|---|
-   | `BLACK-PC-Modloader-1.4.18-com-mods.zip` | Primeira instalação. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
-   | `BLACK-PC-Modloader-1.4.18.zip` | Pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
+   | `BLACK-PC-Modloader-1.4.18-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
+   | `BLACK-PC-Modloader-1.4.18.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
+   | `BLACK-PC-Modloader-1.4.18-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
+   | `BLACK-PC-Modloader-1.4.18-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
    | `BLACK-PC-ModKit-1.0.0.zip` | Kit de desenvolvimento com o `blackmodkit.exe` pronto para usar. Não é necessário para jogar. |
 
    Os nomes dos pacotes do ModLoader mudam conforme a versão. Use sempre os
@@ -54,6 +56,20 @@ mod de exemplo e o fluxo de envio da comunidade.
 > Guarde uma cópia do seu `blackrt.dll`. O pacote completo também inclui
 > `uninstaller-modloader.exe`, que remove a pasta `mods` e restaura o DLL anterior.
 > O `uninstaller` não toca em `savedata\` nem em `black.ini`.
+
+### Linux
+
+O launcher Linux é **nativo** (Python/Tkinter); o jogo e o `blackrt.dll` são Win32
+e rodam pelo **Wine** com suporte 32 bits.
+
+1. Instale `python3`, `python3-tk` e `wine`/`wine32`.
+2. Extraia `BLACK-PC-Modloader-1.4.18-linux-com-mods.zip` (ou o `-linux.zip`) na
+   pasta do port, ou em qualquer pasta.
+3. Rode `bash run-blacklauncher.sh` (ou `python3 blacklauncher-linux.py`).
+4. Escolha a pasta do port, confirme o comando Wine e clique em
+   **Instalar / Atualizar ModLoader** e depois **Jogar**.
+5. A atualização automática já vem ligada na primeira instalação
+   (`update_auto = 1` em `launcher-linux.ini`).
 
 ### Atualizações
 

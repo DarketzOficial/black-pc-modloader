@@ -1,0 +1,71 @@
+BLACK PC - MOD LOADER 1.4.18 - LINUX
+====================================
+
+Launcher nativo para Linux do ModLoader do BLACK PC port (Spark198rus, 0.2.1).
+O launcher roda em Python/Tkinter; o JOGO e o blackrt.dll (modloader) sao Win32
+e rodam pelo Wine. O modloader NAO e uma DLL Linux: ele e carregado pelo black.exe
+dentro do prefixo Wine.
+
+REQUISITOS
+----------
+- Python 3.8 ou mais novo
+- Tkinter
+- Wine (de preferencia com suporte 32 bits, porque o port e Win32)
+
+Debian/Ubuntu:
+    sudo apt install python3 python3-tk wine wine32
+
+Fedora:
+    sudo dnf install python3 python3-tkinter wine
+
+Teste o Tkinter:
+    python3 -m tkinter
+
+INSTALACAO
+----------
+1. Tenha o port do Spark198rus com o jogo (dump NTSC-U) na pasta game/.
+2. Feche o jogo.
+3. Extraia este ZIP na pasta do port (a mesma do black.exe) ou em qualquer
+   pasta e escolha a pasta do port no launcher.
+4. Execute:
+       bash run-blacklauncher.sh
+   ou:
+       python3 blacklauncher-linux.py
+
+5. Na aba Jogo, confira a pasta e o comando Wine. Clique em
+   "Instalar / Atualizar ModLoader".
+6. Clique em "Jogar".
+
+O que o launcher faz:
+- copia blackrt.dll do pacote para a pasta do port (guarda o original em
+  blackrt.dll.original-do-port);
+- copia languages/ (pacotes de idioma) e, no pacote com mods, mods/ que ainda
+  nao existirem;
+- abre o jogo com wine black.exe, opcionalmente em janela 1280x720 e pulando
+  videos;
+- lista os mods de mods/ e liga/desliga pelo arquivo .off;
+- edita language, hud169 e fullscreen no black.ini;
+- procura atualizacoes no GitHub (update_auto = 1 na primeira instalacao).
+
+O launcher NUNCA copia por cima de black.ini, launcher-linux.ini, savedata/,
+game/ ou dos seus mods existentes.
+
+CONFIGURACAO
+------------
+O launcher grava launcher-linux.ini ao lado do script:
+    game_dir, wine, wineprefix, update_auto, windowed, skip_videos
+
+Para usar outro prefixo Wine, preencha WINEPREFIX na aba Jogo.
+
+ATUALIZACOES
+------------
+A aba Atualizacoes consulta:
+    https://api.github.com/repos/DarketzOficial/black-pc-modloader/releases/latest
+e baixa o asset ...-linux.zip. A atualizacao troca o launcher, o blackrt.dll,
+os languages e os mods do pacote; nao toca no jogo nem nos saves.
+
+CREDITOS
+--------
+Port: Spark198rus - https://github.com/Spark198rus/black-pc
+ModLoader/launcher: Darketz - https://github.com/DarketzOficial/black-pc-modloader
+Discord: https://discord.gg/HKpgA9ghVE

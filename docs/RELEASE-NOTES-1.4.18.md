@@ -50,6 +50,20 @@ continuam.
   exigindo o dump NTSC-U `df2739c3...68f6` (`0x577A40`). O aviso de build desconhecida
   ja mostra os dois hashes para o jogador conferir o dump.
 
+## Linux
+
+O launcher Linux e nativo (Python/Tkinter). O jogo e o `blackrt.dll` sao Win32 e
+rodam pelo Wine, com suporte 32 bits.
+
+- Requisitos: `python3`, `python3-tk`, `wine`/`wine32`.
+- `BLACK-PC-Modloader-1.4.18-linux.zip`: launcher nativo + `blackrt.dll` + `languages`.
+- `BLACK-PC-Modloader-1.4.18-linux-com-mods.zip`: o mesmo + `mods` oficiais.
+- `SHA256SUMS-1.4.18-linux.txt`.
+- Extraia na pasta do port (ou escolha a pasta no launcher) e rode
+  `bash run-blacklauncher.sh`.
+- O launcher instala o modloader, lista/liga mods, edita `black.ini` e abre o
+  jogo com Wine. O jogo nao vem no pacote.
+
 ## Arquivos
 
 - `blackrt.dll` do port **0.2.1** (mesmo hash na raiz e em `dist\modloader`):
@@ -59,3 +73,7 @@ continuam.
   `0ae64ddb0970eee47847cd6494d07a238d29a27f159318ca6a2ffbfc2068db08`
 - `BLACK-PC-Modloader-1.4.18-com-mods.zip` (pacote completo com mods):
   `cee3191f78fdde3052aceffc239cc2090961e03c12eaee758124d7bddbb08c11`
+- `BLACK-PC-Modloader-1.4.18-linux.zip`:
+  `95e354cf2a08b3dfeac15f78605de82d19c03b311dc020b3b6203b34b4d9447e`
+- `BLACK-PC-Modloader-1.4.18-linux-com-mods.zip`:
+  `0633cac624a4e488fd35a338c2341350a30e7e5b2bdfd61c77fc9709f784cd25`
