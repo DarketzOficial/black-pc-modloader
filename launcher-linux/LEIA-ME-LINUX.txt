@@ -50,10 +50,26 @@ O que o launcher faz:
 O launcher NUNCA copia por cima de black.ini, launcher-linux.ini, savedata/,
 game/ ou dos seus mods existentes.
 
+DESEMPENHO (WINE/DXVK)
+----------------------
+A aba Desempenho tem:
+- **presets** do black.ini: Qualidade (3x + AA), Equilibrado (2x + AA + 60 fps)
+  e Desempenho (1.5x, sem AA, efeitos no tamanho Xbox, 60 fps);
+- **DXVK**: baixa do GitHub (doitsujin/dxvk) e instala d3d9.dll no prefixo.
+  D3D9 -> Vulkan costuma ser bem mais rapido que o wined3d. Desmarque se o
+  driver Vulkan nao funcionar;
+- **ESync** e **FSync** (FSync exige kernel compativel);
+- **Gamescope** (janela/fullscreen) e **MangoHud** (FPS);
+- **Criar prefixo 32-bit** (WINEARCH=win32), necessario para o port Win32;
+- **Abrir prefixo** para inspecionar os arquivos.
+
+O jogo continua sendo black.exe Win32; o DXVK e o Wine rodam ele no Linux.
+
 CONFIGURACAO
 ------------
 O launcher grava launcher-linux.ini ao lado do script:
     game_dir, wine, wineprefix, update_auto, windowed, skip_videos
+    dxvk, esync, fsync, mangohud, gamescope, preset
 
 Para usar outro prefixo Wine, preencha WINEPREFIX na aba Jogo.
 

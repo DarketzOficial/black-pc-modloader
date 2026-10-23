@@ -70,6 +70,9 @@ e rodam pelo **Wine** com suporte 32 bits.
    **Instalar / Atualizar ModLoader** e depois **Jogar**.
 5. A atualização automática já vem ligada na primeira instalação
    (`update_auto = 1` em `launcher-linux.ini`).
+6. Na aba **Desempenho**, use **Instalar DXVK** (D3D9 → Vulkan), os presets
+   Qualidade/Equilibrado/Desempenho, ESync/FSync, Gamescope e MangoHud.
+   O DXVK é baixado do GitHub e copiado para o prefixo Wine.
 
 ### Atualizações
 

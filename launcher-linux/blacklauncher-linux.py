@@ -18,6 +18,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import urllib.error
@@ -46,6 +47,12 @@ DEFAULTS = {
     "update_auto": "1",
     "windowed": "1",
     "skip_videos": "0",
+    "dxvk": "1",
+    "esync": "1",
+    "fsync": "0",
+    "mangohud": "0",
+    "gamescope": "0",
+    "preset": "Equilibrado",
 }
 
 
@@ -189,6 +196,7 @@ class Launcher(tk.Tk):
         self.nb = ttk.Notebook(self)
         self.nb.pack(fill="both", expand=True, padx=12, pady=6)
         self._tab_game()
+        self._tab_performance()
         self._tab_mods()
         self._tab_settings()
         self._tab_updates()
@@ -247,6 +255,47 @@ class Launcher(tk.Tk):
             "Extraia este pacote na pasta do port (a mesma do black.exe) ou escolha a pasta acima.\n"
             "O jogo não vem no pacote: use o seu dump NTSC-U na pasta game/."
         ), style="Sub.TLabel").pack(anchor="w", pady=12)
+
+    def _tab_performance(self):
+        f = ttk.Frame(self.nb, padding=16)
+        self.nb.add(f, text="Desempenho")
+        presets = ttk.LabelFrame(f, text="Preset do black.ini", padding=10)
+        presets.pack(fill="x", pady=4)
+        r = ttk.Frame(presets)
+        r.pack(fill="x")
+        self.preset_var = tk.StringVar(value=self.cfg.get("preset") or "Equilibrado")
+        ttk.Label(r, text="Preset", width=12).pack(side="left")
+        ttk.Combobox(r, textvariable=self.preset_var, values=["Qualidade", "Equilibrado", "Desempenho"],
+                     state="readonly", width=16).pack(side="left")
+        ttk.Button(r, text="Aplicar preset", command=self._apply_preset).pack(side="left", padx=6)
+        ttk.Label(presets, text=(
+            "Qualidade: escala 3x e AA.  Equilibrado: 2x e AA, 60 fps.  Desempenho: 1.5x, sem AA e efeitos no tamanho Xbox."
+        ), style="Sub.TLabel").pack(anchor="w", pady=(6, 0))
+
+        winebox = ttk.LabelFrame(f, text="Wine / DXVK", padding=10)
+        winebox.pack(fill="x", pady=4)
+        self.dxvk_var = tk.BooleanVar(value=self.cfg.get("dxvk") != "0")
+        self.esync_var = tk.BooleanVar(value=self.cfg.get("esync") != "0")
+        self.fsync_var = tk.BooleanVar(value=self.cfg.get("fsync") == "1")
+        self.mangohud_var = tk.BooleanVar(value=self.cfg.get("mangohud") == "1")
+        self.gamescope_var = tk.BooleanVar(value=self.cfg.get("gamescope") == "1")
+        ttk.Checkbutton(winebox, text="DXVK (D3D9 → Vulkan; melhor desempenho)", variable=self.dxvk_var).pack(anchor="w")
+        ttk.Checkbutton(winebox, text="ESync", variable=self.esync_var).pack(anchor="w")
+        ttk.Checkbutton(winebox, text="FSync (precisa de kernel compatível)", variable=self.fsync_var).pack(anchor="w")
+        ttk.Checkbutton(winebox, text="MangoHud (FPS)", variable=self.mangohud_var).pack(anchor="w")
+        ttk.Checkbutton(winebox, text="Gamescope (janela/fullscreen do jogo)", variable=self.gamescope_var).pack(anchor="w")
+        br = ttk.Frame(winebox)
+        br.pack(fill="x", pady=(8, 0))
+        ttk.Button(br, text="Instalar DXVK no prefixo", command=self._install_dxvk).pack(side="left")
+        ttk.Button(br, text="Criar prefixo 32-bit", command=self._create_prefix).pack(side="left", padx=6)
+        ttk.Button(br, text="Abrir prefixo", command=self._open_prefix).pack(side="left")
+        ttk.Label(winebox, text=(
+            "O prefixo é o WINEPREFIX da aba Jogo; vazio = ~/.wine. O DXVK é baixado do GitHub "
+            "(doitsujin/dxvk) e copiado para system32/syswow64. O black.exe continua Win32."
+        ), style="Sub.TLabel").pack(anchor="w", pady=(8, 0))
+        self.perf_info = ttk.Label(f, text="", style="Sub.TLabel")
+        self.perf_info.pack(anchor="w", pady=8)
+        self._refresh_perf()
 
     def _tab_mods(self):
         f = ttk.Frame(self.nb, padding=16)
@@ -348,6 +397,123 @@ class Launcher(tk.Tk):
         if d:
             self.prefix_var.set(d)
 
+    def _prefix_path(self) -> Path:
+        p = self.prefix_var.get().strip()
+        return Path(p).expanduser().resolve() if p else (Path.home() / ".wine")
+
+    def _refresh_perf(self):
+        if not hasattr(self, "perf_info"):
+            return
+        p = self._prefix_path()
+        s64 = p / "drive_c" / "windows" / "syswow64" / "d3d9.dll"
+        s32 = p / "drive_c" / "windows" / "system32" / "d3d9.dll"
+        have = s64.exists() or s32.exists()
+        self.perf_info.configure(text=f"Prefixo: {p}  •  DXVK/d3d9.dll: {'instalado' if have else 'não instalado'}")
+
+    def _apply_preset(self):
+        g = self._game_or_warn()
+        if not g:
+            return
+        p = self.preset_var.get()
+        if p == "Qualidade":
+            vals = {"scale": "3.000", "aa": "1", "effectsnative": "0", "fps_cap": "0", "vsync": "0"}
+        elif p == "Desempenho":
+            vals = {"scale": "1.500", "aa": "0", "effectsnative": "1", "fps_cap": "60", "vsync": "0"}
+        else:
+            vals = {"scale": "2.000", "aa": "1", "effectsnative": "0", "fps_cap": "60", "vsync": "0"}
+        try:
+            ini_set(g / "black.ini", "render", "scale")
+            for k, v in vals.items():
+                ini_set(g / "black.ini", k, v)
+            ini_set(g / "black.ini", "hudfade", "1")
+            self.cfg.set("preset", p)
+            self.cfg.save()
+            self._load_black(g)
+            self._set_status(f"Preset {p} aplicado no black.ini.")
+        except OSError as e:
+            messagebox.showerror("Preset", str(e))
+
+    def _create_prefix(self):
+        prefix = self._prefix_path()
+        wine = self.wine_var.get().strip() or "wine"
+        env = os.environ.copy()
+        env["WINEPREFIX"] = str(prefix)
+        env["WINEARCH"] = "win32"
+        env.setdefault("WINEDEBUG", "-all")
+
+        def work():
+            try:
+                subprocess.run(shlex.split(wine) + ["wineboot", "-u"], env=env,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
+                self.after(0, lambda: (self._refresh_perf(), self._set_status("Prefixo 32-bit criado/atualizado.")))
+            except FileNotFoundError:
+                self.after(0, lambda: messagebox.showerror("Wine", f"Comando não encontrado: {wine}"))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Prefixo Wine", str(e)))
+
+        self._set_status("Criando prefixo Wine 32-bit…")
+        threading.Thread(target=work, daemon=True).start()
+
+    def _open_prefix(self):
+        p = self._prefix_path()
+        if not p.exists():
+            messagebox.showinfo("Prefixo Wine", "O prefixo ainda não existe. Use Criar prefixo 32-bit.")
+            return
+        webbrowser.open(p.as_uri())
+
+    def _install_dxvk(self):
+        prefix = self._prefix_path()
+        if not (prefix / "drive_c").exists():
+            messagebox.showinfo("DXVK", "Crie o prefixo Wine primeiro (aba Desempenho).")
+            return
+
+        def work():
+            try:
+                req = urllib.request.Request(
+                    "https://api.github.com/repos/doitsujin/dxvk/releases/latest",
+                    headers={"User-Agent": f"BLACK-PC-Linux/{APP_VERSION}"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    data = json.load(r)
+                asset = next((a for a in data.get("assets", [])
+                              if a.get("name", "").endswith(".tar.gz") and "src" not in a.get("name", "")), None)
+                if not asset:
+                    raise RuntimeError("release do DXVK sem .tar.gz")
+                self.after(0, lambda: self._set_status(f"Baixando DXVK {data.get('tag_name', '')}…"))
+                with tempfile.TemporaryDirectory(prefix="black-dxvk-") as td:
+                    tarpath = Path(td) / "dxvk.tar.gz"
+                    req = urllib.request.Request(asset["browser_download_url"],
+                                                 headers={"User-Agent": f"BLACK-PC-Linux/{APP_VERSION}"})
+                    with urllib.request.urlopen(req, timeout=180) as r, tarpath.open("wb") as f:
+                        shutil.copyfileobj(r, f)
+                    with tarfile.open(tarpath, "r:gz") as tf:
+                        tf.extractall(td)
+                    x32 = next((p for p in Path(td).rglob("d3d9.dll") if p.parent.name == "x32"), None)
+                    x64 = next((p for p in Path(td).rglob("d3d9.dll") if p.parent.name == "x64"), None)
+                    if not x32:
+                        raise RuntimeError("d3d9.dll x32 não encontrado no DXVK")
+                    s32 = prefix / "drive_c" / "windows" / "system32"
+                    s64 = prefix / "drive_c" / "windows" / "syswow64"
+                    s32.mkdir(parents=True, exist_ok=True)
+                    if s64.is_dir():
+                        s64.mkdir(parents=True, exist_ok=True)
+                        for src, dst in ((x32, s64 / "d3d9.dll"), (x64, s32 / "d3d9.dll")):
+                            if dst.exists() and not (dst.with_name("d3d9.dll.wine")).exists():
+                                shutil.copy2(dst, dst.with_name("d3d9.dll.wine"))
+                            if src:
+                                shutil.copy2(src, dst)
+                    else:
+                        dst = s32 / "d3d9.dll"
+                        if dst.exists() and not dst.with_name("d3d9.dll.wine").exists():
+                            shutil.copy2(dst, dst.with_name("d3d9.dll.wine"))
+                        shutil.copy2(x32, dst)
+                self.after(0, lambda: (self.dxvk_var.set(True), self.cfg.set("dxvk", "1"), self.cfg.save(),
+                                       self._refresh_perf(), self._set_status("DXVK instalado no prefixo.")))
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("DXVK", f"Falha:\n{e}"))
+
+        self._set_status("Instalando DXVK…")
+        threading.Thread(target=work, daemon=True).start()
+
     def _refresh_game(self):
         g = Path(self.game_var.get()).expanduser().resolve() if self.game_var.get().strip() else (self.game.resolve() if self.game else None)
         if g and game_ok(g):
@@ -443,7 +609,17 @@ class Launcher(tk.Tk):
         self.cfg.set("wineprefix", self.prefix_var.get().strip())
         self.cfg.set("windowed", "1" if self.windowed_var.get() else "0")
         self.cfg.set("skip_videos", "1" if self.skip_var.get() else "0")
+        self.cfg.set("dxvk", "1" if self.dxvk_var.get() else "0")
+        self.cfg.set("esync", "1" if self.esync_var.get() else "0")
+        self.cfg.set("fsync", "1" if self.fsync_var.get() else "0")
+        self.cfg.set("mangohud", "1" if self.mangohud_var.get() else "0")
+        self.cfg.set("gamescope", "1" if self.gamescope_var.get() else "0")
         self.cfg.save()
+        prefix = self._prefix_path()
+        if not (prefix / "drive_c").exists():
+            if messagebox.askyesno("Prefixo Wine", f"O prefixo {prefix} ainda não existe. Criar agora (32-bit)?"):
+                self._create_prefix()
+            return
         wine = self.wine_var.get().strip() or "wine"
         args = shlex.split(wine) + [str(exe)]
         if self.windowed_var.get():
@@ -451,18 +627,37 @@ class Launcher(tk.Tk):
         if self.skip_var.get():
             args += ["--skip-videos"]
         env = os.environ.copy()
-        prefix = self.prefix_var.get().strip()
-        if prefix:
-            env["WINEPREFIX"] = str(Path(prefix).expanduser())
+        env["WINEPREFIX"] = str(prefix)
         env.setdefault("WINEDEBUG", "-all")
+        if self.esync_var.get():
+            env["WINEESYNC"] = "1"
+        if self.fsync_var.get():
+            env["WINEFSYNC"] = "1"
+        if self.mangohud_var.get():
+            env["MANGOHUD"] = "1"
+        if self.dxvk_var.get():
+            old = env.get("WINEDLLOVERRIDES", "").strip(";,")
+            env["WINEDLLOVERRIDES"] = (old + ";d3d9=n,b").strip(";")
+        cmd = args
+        if self.gamescope_var.get():
+            gs = ["gamescope", "-W", "1280", "-H", "720"]
+            if self.windowed_var.get():
+                gs += ["-w", "1280", "-h", "720"]
+            else:
+                gs += ["-f"]
+            cmd = gs + ["--"] + args
+        if not (prefix / "drive_c" / "windows" / "syswow64" / "d3d9.dll").exists() and \
+           not (prefix / "drive_c" / "windows" / "system32" / "d3d9.dll").exists():
+            self._set_status("DXVK não instalado: usando o D3D9 do Wine (wined3d).")
         try:
-            self.game_proc = subprocess.Popen(args, cwd=str(g), env=env)
+            self.game_proc = subprocess.Popen(cmd, cwd=str(g), env=env)
             self._set_status(f"Jogo aberto (PID {self.game_proc.pid}).")
             self.after(1000, self._poll_game)
-        except FileNotFoundError:
-            messagebox.showerror("Wine não encontrado",
-                                 f"Não encontrei '{wine}'.\n\nInstale o Wine (ex.: sudo apt install wine wine32) "
-                                 "ou coloque o comando correto na aba Jogo.")
+        except FileNotFoundError as e:
+            what = "gamescope" if self.gamescope_var.get() else wine
+            messagebox.showerror("Não encontrado",
+                                 f"Não encontrei '{what}'.\n\nInstale o Wine (ex.: sudo apt install wine wine32) "
+                                 "e o gamescope se estiver usando a opção dele.")
         except OSError as e:
             messagebox.showerror("Jogar", str(e))
 

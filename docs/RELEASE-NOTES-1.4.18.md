@@ -63,6 +63,9 @@ rodam pelo Wine, com suporte 32 bits.
   `bash run-blacklauncher.sh`.
 - O launcher instala o modloader, lista/liga mods, edita `black.ini` e abre o
   jogo com Wine. O jogo nao vem no pacote.
+- Aba **Desempenho**: DXVK (D3D9 -> Vulkan) baixado do GitHub e instalado no
+  prefixo, preset Qualidade/Equilibrado/Desempenho, ESync/FSync, Gamescope e
+  MangoHud; o launcher tambem cria um prefixo Wine 32-bit.
 
 ## Arquivos
 
@@ -74,6 +77,6 @@ rodam pelo Wine, com suporte 32 bits.
 - `BLACK-PC-Modloader-1.4.18-com-mods.zip` (pacote completo com mods):
   `cee3191f78fdde3052aceffc239cc2090961e03c12eaee758124d7bddbb08c11`
 - `BLACK-PC-Modloader-1.4.18-linux.zip`:
-  `95e354cf2a08b3dfeac15f78605de82d19c03b311dc020b3b6203b34b4d9447e`
+  `472f52dde0b31d8c25ae9a78e5daa396c6441c30f1cedfb79e839c3eabe072c0`
 - `BLACK-PC-Modloader-1.4.18-linux-com-mods.zip`:
-  `0633cac624a4e488fd35a338c2341350a30e7e5b2bdfd61c77fc9709f784cd25`
+  `866ace0b00f864df5d017d41bdbc7b52e57365f83e9b7a13bccd37c775bd5764`
