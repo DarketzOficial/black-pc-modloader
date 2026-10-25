@@ -9,6 +9,13 @@ modkit/bin/
 modkit/obj/
 modkit/dist/
 modkit/modkit.ini
+
+# saidas de build do launcher Windows (quando a copia do fonte vier para ca)
+launcher/bin/
+launcher/obj/
+
+# configure do CMake do port (gerado; o build real fica em black-src)
+build/
 .vs/
 *.user
 

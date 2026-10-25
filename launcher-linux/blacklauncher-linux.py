@@ -30,7 +30,7 @@ from tkinter import filedialog, messagebox
 from tkinter import ttk
 import tkinter as tk
 
-APP_VERSION = "1.4.18"
+APP_VERSION = "1.4.21"
 REPO = "DarketzOficial/black-pc-modloader"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -327,15 +327,24 @@ class Launcher(tk.Tk):
         box = ttk.LabelFrame(f, text="black.ini do jogo", padding=10)
         box.pack(fill="x", pady=4)
         self.lang_var = tk.StringVar(value="pt-BR")
+        self.aspect_var = tk.StringVar(value="16:9")
         self.hud_var = tk.BooleanVar(value=True)
+        self.text_var = tk.BooleanVar(value=False)
         self.full_var = tk.BooleanVar(value=False)
         r = ttk.Frame(box)
         r.pack(fill="x", pady=3)
         ttk.Label(r, text="Idioma", width=12).pack(side="left")
         ttk.Combobox(r, textvariable=self.lang_var, values=["en", "pt-BR", "es", "fr", "de", "it", "id", "ru"],
                      state="readonly", width=12).pack(side="left")
-        ttk.Label(box, text="HUD 16:9 afeta só vida/munição; os textos ficam no 4:3 original.", style="Sub.TLabel").pack(anchor="w", pady=(6, 2))
+        r2 = ttk.Frame(box)
+        r2.pack(fill="x", pady=3)
+        ttk.Label(r2, text="Proporção", width=12).pack(side="left")
+        ttk.Combobox(r2, textvariable=self.aspect_var, values=["16:9", "21:9", "4:3"],
+                     state="readonly", width=12).pack(side="left")
+        ttk.Label(r2, text="21:9 = ultrawide (2560x1080); vale no próximo início.", style="Sub.TLabel").pack(side="left", padx=8)
+        ttk.Label(box, text="HUD 16:9 afeta só vida/munição. Os textos e objetivos têm uma opção própria.", style="Sub.TLabel").pack(anchor="w", pady=(6, 2))
         ttk.Checkbutton(box, text="HUD 16:9 (vida/munição)", variable=self.hud_var).pack(anchor="w")
+        ttk.Checkbutton(box, text="Textos e objetivos 16:9 (experimental)", variable=self.text_var).pack(anchor="w")
         ttk.Checkbutton(box, text="Tela cheia", variable=self.full_var).pack(anchor="w")
         btns = ttk.Frame(f)
         btns.pack(fill="x", pady=12)
@@ -532,7 +541,9 @@ class Launcher(tk.Tk):
     def _load_black(self, g: Path):
         p = g / "black.ini"
         self.lang_var.set(ini_get(p, "language", "pt-BR") or "pt-BR")
+        self.aspect_var.set({0: "4:3", 1: "16:9", 2: "21:9"}.get(int(ini_get(p, "widescreen", "1") or "1"), "16:9"))
         self.hud_var.set(ini_get(p, "hud169", "1") != "0")
+        self.text_var.set(ini_get(p, "text169", "0") != "0")
         self.full_var.set(ini_get(p, "fullscreen", "0") != "0")
 
     def _open_game(self):
@@ -724,7 +735,9 @@ class Launcher(tk.Tk):
         p = g / "black.ini"
         try:
             ini_set(p, "language", self.lang_var.get())
+            ini_set(p, "widescreen", {"4:3": "0", "16:9": "1", "21:9": "2"}[self.aspect_var.get()])
             ini_set(p, "hud169", "1" if self.hud_var.get() else "0")
+            ini_set(p, "text169", "1" if self.text_var.get() else "0")
             ini_set(p, "fullscreen", "1" if self.full_var.get() else "0")
             self._set_status("black.ini atualizado.")
         except OSError as e:

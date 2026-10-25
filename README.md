@@ -35,10 +35,10 @@ mod de exemplo e o fluxo de envio da comunidade.
 
    | Asset | Quando usar |
    |---|---|
-   | `BLACK-PC-Modloader-1.4.18-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
-   | `BLACK-PC-Modloader-1.4.18.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
-   | `BLACK-PC-Modloader-1.4.18-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
-   | `BLACK-PC-Modloader-1.4.18-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
+   | `BLACK-PC-Modloader-1.4.21-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
+   | `BLACK-PC-Modloader-1.4.21.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
+   | `BLACK-PC-Modloader-1.4.21-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
+   | `BLACK-PC-Modloader-1.4.21-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
    | `BLACK-PC-ModKit-1.0.0.zip` | Kit de desenvolvimento com o `blackmodkit.exe` pronto para usar. Não é necessário para jogar. |
 
    Os nomes dos pacotes do ModLoader mudam conforme a versão. Use sempre os
@@ -63,7 +63,7 @@ O launcher Linux é **nativo** (Python/Tkinter); o jogo e o `blackrt.dll` são W
 e rodam pelo **Wine** com suporte 32 bits.
 
 1. Instale `python3`, `python3-tk` e `wine`/`wine32`.
-2. Extraia `BLACK-PC-Modloader-1.4.18-linux-com-mods.zip` (ou o `-linux.zip`) na
+2. Extraia `BLACK-PC-Modloader-1.4.21-linux-com-mods.zip` (ou o `-linux.zip`) na
    pasta do port, ou em qualquer pasta.
 3. Rode `bash run-blacklauncher.sh` (ou `python3 blacklauncher-linux.py`).
 4. Escolha a pasta do port, confirme o comando Wine e clique em
@@ -86,18 +86,20 @@ atualização. A atualização preserva:
 - `log\`.
 
 As notas de cada versão ficam na própria release e em
-[`docs/RELEASE-NOTES-1.4.18.md`](docs/RELEASE-NOTES-1.4.18.md).
+[`docs/RELEASE-NOTES-1.4.21.md`](docs/RELEASE-NOTES-1.4.21.md).
 
 ---
 
-## Novidades da 1.4.18
+## Novidades da 1.4.21
 
-- Corrigido o crash ao dar uma arma pelo trainer sem o sub-objeto de dados (`0x0013AE3`, arma 9).
-- Corrigido o crash ao aplicar um efeito com entrada inválida na tabela (`0x001A7992`).
-- Corrigido o crash no stream de áudio quando o ponteiro do formato está inválido (`0x00085A8A`).
-- Aviso explícito para builds do jogo não suportadas (o port exige o `default.xbe` NTSC-U).
-- **HUD:** só vida e munição em 16:9; objetivo, dicas e prompts no 4:3 original.
-- **Launcher:** atualização automática ligada na primeira instalação.
+- **Menus 21:9:** title, loading, menu, opções e CONF. PC em caixa 16:9
+  centralizada, sem moldura duplicada; laterais na cor da borda da página.
+- **Ícones de botão automáticos:** com teclado/mouse viram keycaps com as teclas
+  vinculadas; controle Xbox mantém os originais; PlayStation ganha × ○ □ △,
+  setas e options. Troca sozinha, sem reiniciar.
+- **Acentos:** ã õ Ã Õ passam a renderizar (antes sumiam).
+- **Crashes** dos logs dos jogadores corrigidos (boot, HUD/arma, áudio).
+- **Texturas HD:** 62 pares (era 53).
 - Port inalterado em **0.2.1**.
 
 ---
@@ -337,7 +339,7 @@ Encontrou um problema no kit ou em um mod? Abra uma issue usando os modelos em
 
 - Formato completo do mod: [`docs/MODS.md`](docs/MODS.md).
 - Política de releases e assets: [`docs/RELEASES.md`](docs/RELEASES.md).
-- Notas da versão atual: [`docs/RELEASE-NOTES-1.4.18.md`](docs/RELEASE-NOTES-1.4.18.md).
+- Notas da versão atual: [`docs/RELEASE-NOTES-1.4.21.md`](docs/RELEASE-NOTES-1.4.21.md).
 - Como enviar: [`comunidade/COMO-ENVIAR.md`](comunidade/COMO-ENVIAR.md).
 - Checklist do mantenedor: [`comunidade/CHECKLIST-MANTENEDOR.md`](comunidade/CHECKLIST-MANTENEDOR.md).
 - Fonte do ModKit: [`modkit/`](modkit/).

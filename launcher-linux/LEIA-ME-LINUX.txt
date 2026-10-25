@@ -1,4 +1,4 @@
-BLACK PC - MOD LOADER 1.4.18 - LINUX
+BLACK PC - MOD LOADER 1.4.21 - LINUX
 ====================================
 
 Launcher nativo para Linux do ModLoader do BLACK PC port (Spark198rus, 0.2.1).
@@ -44,7 +44,15 @@ O que o launcher faz:
 - abre o jogo com wine black.exe, opcionalmente em janela 1280x720 e pulando
   videos;
 - lista os mods de mods/ e liga/desliga pelo arquivo .off;
-- edita language, hud169 e fullscreen no black.ini;
+- edita language, proporcao (16:9/21:9/4:3), hud169, text169 e fullscreen no black.ini;
+
+PROPORCAO DA TELA
+------------------
+- 16:9 (padrao), 21:9 (ultrawide 2560x1080) e 4:3 no black.ini (widescreen = 1, 2 ou 0);
+  vale a partir do proximo inicio do jogo.
+- No 21:9 o jogo usa a proporcao 64:27 de verdade: a arma e os textos ficam do
+  mesmo tamanho do 16:9, o HUD nos cantos da tela, menus numa caixa 16:9
+  centralizada e os filmes em caixa (16:9 por padrao, 4:3 com Videos (FMV)).
 - procura atualizacoes no GitHub (update_auto = 1 na primeira instalacao).
 
 O launcher NUNCA copia por cima de black.ini, launcher-linux.ini, savedata/,
