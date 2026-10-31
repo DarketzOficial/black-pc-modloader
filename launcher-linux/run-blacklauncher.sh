@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# BLACK PC ModLoader - native Linux launcher
+# BLACK PC ModLoader - native Linux launcher (Avalonia, same UI as the Windows launcher)
+# The launcher is native; the game and blackrt.dll are Win32 and run under Wine.
 set -e
-cd "$(dirname "$0")"
-exec python3 blacklauncher-linux.py "$@"
+here="$(cd "$(dirname "$0")" && pwd)"
+cd "$here"
+exec "$here/launcher-linux/blacklauncher" --port "$here" "$@"

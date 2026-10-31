@@ -35,10 +35,10 @@ mod de exemplo e o fluxo de envio da comunidade.
 
    | Asset | Quando usar |
    |---|---|
-   | `BLACK-PC-Modloader-1.4.21-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
-   | `BLACK-PC-Modloader-1.4.21.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
-   | `BLACK-PC-Modloader-1.4.21-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
-   | `BLACK-PC-Modloader-1.4.21-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
+   | `BLACK-PC-Modloader-1.4.23-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
+   | `BLACK-PC-Modloader-1.4.23.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
+   | `BLACK-PC-Modloader-1.4.23-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
+   | `BLACK-PC-Modloader-1.4.23-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
    | `BLACK-PC-ModKit-1.0.0.zip` | Kit de desenvolvimento com o `blackmodkit.exe` pronto para usar. Não é necessário para jogar. |
 
    Os nomes dos pacotes do ModLoader mudam conforme a versão. Use sempre os
@@ -59,20 +59,36 @@ mod de exemplo e o fluxo de envio da comunidade.
 
 ### Linux
 
-O launcher Linux é **nativo** (Python/Tkinter); o jogo e o `blackrt.dll` são Win32
-e rodam pelo **Wine** com suporte 32 bits.
+O launcher Linux é o **mesmo launcher do Windows**, compilado para Linux
+(Avalonia/.NET 8): mesmas abas, mesmos ajustes, mesmos avisos. Não precisa de
+Python nem de .NET instalado — a pasta `launcher-linux/` já vem completa.
+O jogo e o `blackrt.dll` são Win32 e rodam pelo **Wine** com suporte 32 bits.
 
-1. Instale `python3`, `python3-tk` e `wine`/`wine32`.
-2. Extraia `BLACK-PC-Modloader-1.4.21-linux-com-mods.zip` (ou o `-linux.zip`) na
-   pasta do port, ou em qualquer pasta.
-3. Rode `bash run-blacklauncher.sh` (ou `python3 blacklauncher-linux.py`).
-4. Escolha a pasta do port, confirme o comando Wine e clique em
-   **Instalar / Atualizar ModLoader** e depois **Jogar**.
-5. A atualização automática já vem ligada na primeira instalação
-   (`update_auto = 1` em `launcher-linux.ini`).
-6. Na aba **Desempenho**, use **Instalar DXVK** (D3D9 → Vulkan), os presets
-   Qualidade/Equilibrado/Desempenho, ESync/FSync, Gamescope e MangoHud.
-   O DXVK é baixado do GitHub e copiado para o prefixo Wine.
+1. Instale o `wine` com suporte a 32 bits, porque o port é Win32:
+   `sudo apt install wine wine32` (Debian/Ubuntu) ou `sudo dnf install wine` (Fedora).
+2. Extraia `BLACK-PC-Modloader-1.4.23-linux-com-mods.zip` (ou o `-linux.zip`) na
+   pasta do port (a que tem `black.exe`), confirmando a substituição do `blackrt.dll`.
+3. Rode `bash run-blacklauncher.sh` (o script passa a pasta do port ao launcher).
+4. Ajuste o que quiser e clique em **JOGAR**; o jogo abre pelo Wine.
+5. A atualização automática já vem ligada (`update_auto = 1`): ela baixa o
+   pacote `...-linux.zip` e aplica no próximo início do launcher.
+
+Para escolher o comando do Wine, o prefixo ou desligar o DXVK, edite
+`launcher-linux/launcher.ini`:
+
+```ini
+wine = wine
+wineprefix = /home/jogador/.wine-black
+dxvk = 1
+```
+
+O `LEIA-ME-LINUX.txt` do pacote explica cada opção (incluindo criar um prefixo
+32 bits com `WINEARCH=win32`). O som do launcher usa `mpv` ou `ffplay`, quando
+existirem; sem eles o launcher fica mudo e nada mais muda.
+
+O ModLoader 1.4.23 é compatível com o **BLACK PC port 0.3.0** (e com o 0.2.1):
+as opções novas do port 0.3.0 aparecem no launcher e as opções antigas continuam
+exatamente iguais.
 
 ### Atualizações
 
@@ -353,4 +369,6 @@ jogo; você precisa ter o BLACK original e uma instalação do port para testar.
 
 - **Spark198rus** — BLACK PC port.
 - **DarketzOficial** — ModLoader, launcher e kit de mods.
+- **MrGeeH** — dublagem PT-BR (áudio do jogo): https://github.com/MrGeeH
+- **Sol Diego** — pacotes de idioma (texto, fontes e legendas): https://github.com/soldieg
 - Comunidade de mods do BLACK PC.

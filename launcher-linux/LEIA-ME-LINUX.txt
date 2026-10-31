@@ -1,92 +1,89 @@
-BLACK PC - MOD LOADER 1.4.21 - LINUX
+BLACK PC - MOD LOADER 1.4.23 - LINUX
 ====================================
 
-Launcher nativo para Linux do ModLoader do BLACK PC port (Spark198rus, 0.2.1).
-O launcher roda em Python/Tkinter; o JOGO e o blackrt.dll (modloader) sao Win32
-e rodam pelo Wine. O modloader NAO e uma DLL Linux: ele e carregado pelo black.exe
+Launcher nativo para Linux do ModLoader do BLACK PC port (Spark198rus).
+E o mesmo launcher do Windows (mesmas abas, mesmos ajustes, mesmo visual),
+compilado para Linux; o JOGO e o blackrt.dll (modloader) sao Win32 e rodam
+pelo Wine. O modloader NAO e uma DLL Linux: ele e carregado pelo black.exe
 dentro do prefixo Wine.
+
+COMPATIBILIDADE
+---------------
+- So com o BLACK PC port do Spark198rus (nao com o BLACK-XBERecomp do TGP482).
+- Compativel com o BLACK PC port 0.3.0 (e com o 0.2.1): as opcoes novas do port
+  0.3.0 aparecem no launcher e as opcoes antigas continuam exatamente iguais.
+- Precisa do jogo com dump na pasta game/ (default.xbe + arquivos). Este pacote
+  NAO inclui o jogo.
 
 REQUISITOS
 ----------
-- Python 3.8 ou mais novo
-- Tkinter
+- Linux x86-64
 - Wine (de preferencia com suporte 32 bits, porque o port e Win32)
+- Nada de .NET instalado: o launcher ja vem completo nesta pasta.
 
 Debian/Ubuntu:
-    sudo apt install python3 python3-tk wine wine32
+    sudo apt install wine wine32
+    (em sistemas 64 bits com suporte a i386: sudo dpkg --add-architecture i386
+     e depois sudo apt update && sudo apt install wine32:i386)
 
 Fedora:
-    sudo dnf install python3 python3-tkinter wine
+    sudo dnf install wine
 
-Teste o Tkinter:
-    python3 -m tkinter
+Opcional (som do launcher): mpv ou ffplay (ffmpeg) no PATH.
 
 INSTALACAO
 ----------
 1. Tenha o port do Spark198rus com o jogo (dump NTSC-U) na pasta game/.
 2. Feche o jogo.
-3. Extraia este ZIP na pasta do port (a mesma do black.exe) ou em qualquer
-   pasta e escolha a pasta do port no launcher.
+3. Extraia este ZIP na pasta do port (a mesma do black.exe).
 4. Execute:
        bash run-blacklauncher.sh
-   ou:
-       python3 blacklauncher-linux.py
+   (ou dê permissao de execucao duas vezes e abra run-blacklauncher.sh pelo
+   gerenciador de arquivos: chmod +x run-blacklauncher.sh launcher-linux/blacklauncher)
 
-5. Na aba Jogo, confira a pasta e o comando Wine. Clique em
-   "Instalar / Atualizar ModLoader".
-6. Clique em "Jogar".
+O launcher encontra o port pela pasta onde ele esta ("--port" ja vai no script).
 
-O que o launcher faz:
-- copia blackrt.dll do pacote para a pasta do port (guarda o original em
-  blackrt.dll.original-do-port);
-- copia languages/ (pacotes de idioma) e, no pacote com mods, mods/ que ainda
-  nao existirem;
-- abre o jogo com wine black.exe, opcionalmente em janela 1280x720 e pulando
-  videos;
-- lista os mods de mods/ e liga/desliga pelo arquivo .off;
-- edita language, proporcao (16:9/21:9/4:3), hud169, text169 e fullscreen no black.ini;
+O QUE ELE FAZ
+-------------
+- le e grava o black.ini (todos os ajustes das abas VIDEO, GRAFICOS,
+  DESEMPENHO, AUDIO E JOGO, CONTROLES, MODS e AVANCADO);
+- lista os mods de mods/ e liga/desliga (o estado fica no proprio mod);
+- abre o jogo com Wine e mostra o relatorio de erro se ele fechar com erro;
+- procura atualizacoes no GitHub e instala o pacote ...-linux.zip.
 
-PROPORCAO DA TELA
-------------------
-- 16:9 (padrao), 21:9 (ultrawide 2560x1080) e 4:3 no black.ini (widescreen = 1, 2 ou 0);
-  vale a partir do proximo inicio do jogo.
-- No 21:9 o jogo usa a proporcao 64:27 de verdade: a arma e os textos ficam do
-  mesmo tamanho do 16:9, o HUD nos cantos da tela, menus numa caixa 16:9
-  centralizada e os filmes em caixa (16:9 por padrao, 4:3 com Videos (FMV)).
-- procura atualizacoes no GitHub (update_auto = 1 na primeira instalacao).
+O launcher NUNCA copia por cima de black.ini, savedata/, game/ nem dos seus mods.
+O blackrt.dll deste pacote ja e o modloader: a extracao do ZIP sobre a pasta do
+port substitui o blackrt.dll do port (guarde uma copia se quiser voltar atras).
 
-O launcher NUNCA copia por cima de black.ini, launcher-linux.ini, savedata/,
-game/ ou dos seus mods existentes.
+WINE
+----
+O launcher usa o comando "wine" por padrao. Para escolher outro comando, outro
+prefixo ou desligar o DXVK, crie/edite launcher.ini AO LADO do blacklauncher
+(launcher-linux/launcher.ini):
 
-DESEMPENHO (WINE/DXVK)
-----------------------
-A aba Desempenho tem:
-- **presets** do black.ini: Qualidade (3x + AA), Equilibrado (2x + AA + 60 fps)
-  e Desempenho (1.5x, sem AA, efeitos no tamanho Xbox, 60 fps);
-- **DXVK**: baixa do GitHub (doitsujin/dxvk) e instala d3d9.dll no prefixo.
-  D3D9 -> Vulkan costuma ser bem mais rapido que o wined3d. Desmarque se o
-  driver Vulkan nao funcionar;
-- **ESync** e **FSync** (FSync exige kernel compativel);
-- **Gamescope** (janela/fullscreen) e **MangoHud** (FPS);
-- **Criar prefixo 32-bit** (WINEARCH=win32), necessario para o port Win32;
-- **Abrir prefixo** para inspecionar os arquivos.
+    wine = wine
+    wineprefix = /home/jogador/.wine-black
+    dxvk = 1
 
-O jogo continua sendo black.exe Win32; o DXVK e o Wine rodam ele no Linux.
+  wine         comando do Wine (wine, wine64, /caminho/para/wine)
+  wineprefix   WINEPREFIX usado para abrir o jogo (vazio = o padrao do sistema)
+  dxvk         1 = d3d9 via DXVK (WINEDLLOVERRIDES=d3d9=n,b), 0 = wined3d
 
-CONFIGURACAO
-------------
-O launcher grava launcher-linux.ini ao lado do script:
-    game_dir, wine, wineprefix, update_auto, windowed, skip_videos
-    dxvk, esync, fsync, mangohud, gamescope, preset
+DXVK costuma ser bem mais rapido que o wined3d. Se o driver Vulkan nao funcionar,
+coloque dxvk = 0.
 
-Para usar outro prefixo Wine, preencha WINEPREFIX na aba Jogo.
+Um prefixo 32 bits (WINEARCH=win32) e o mais indicado para o port Win32:
+    WINEARCH=win32 WINEPREFIX=~/.wine-black wineboot -u
+
+O jogo continua sendo black.exe Win32; o Wine roda ele no Linux.
 
 ATUALIZACOES
 ------------
-A aba Atualizacoes consulta:
+A aba AVANCADO > PROCURAR ATUALIZACAO consulta
     https://api.github.com/repos/DarketzOficial/black-pc-modloader/releases/latest
-e baixa o asset ...-linux.zip. A atualizacao troca o launcher, o blackrt.dll,
-os languages e os mods do pacote; nao toca no jogo nem nos saves.
+e baixa o asset ...-linux.zip. A troca dos arquivos acontece no proximo inicio
+do launcher (o pacote e extraido agora e aplicado antes da janela abrir).
+Nao toca no jogo nem nos saves.
 
 CREDITOS
 --------
