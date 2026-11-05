@@ -87,6 +87,39 @@ mods\meu-mod\subtitles\02_n.srt
 - O tempo é contado desde o início do filme.
 - As legendas ligam/desligam junto com o mod. Se quiser desligar só as legendas, use `subtitles = 0` no `black.ini`.
 
+## Mods de armas, animações e texturas (Black 2006 Modding tools)
+
+As [ferramentas de modding do pedrolZasx](https://github.com/pedrolZasx/Black_2006_Modding_tools/)
+(`Black_2006_Modding_tools`, o "kllesa") exportam armas, animações e texturas como
+os `.db` do próprio jogo. Um mod feito com elas entra no modloader como qualquer
+outro: é só pôr os arquivos no caminho do jogo, dentro de `game\`:
+
+```
+mods\minha-arma\
+  mod.ini                    (name = MINHA ARMA)
+  game\
+    levels\level_00\fpguns\bg1_ak1.db
+    levels\level_01\fpguns\bg1_ak1.db
+```
+
+Regras:
+
+- O caminho é o do jogo: `levels\<fase>\fpguns\<arma>.db`, com o **mesmo nome**
+  do arquivo original. A fase tem de ser a mesma em que o jogo carrega aquela arma
+  (o `.db` da AK-47, por exemplo, existe em várias fases — copie para todas as que
+  você quer cobrir).
+- Armas com modelo/textura grande precisam de mais memória para os `.db`: em
+  **AUDIO E JOGO > Buffers de arma** escolha **4 MB** ou **8 MB** (é o mesmo que o
+  `black.exe --buf-mb 8` das ferramentas). Vale do próximo início. Sem isso o jogo
+  pode mostrar "disco sujo" ao carregar a arma.
+- Texturas trocadas pelo **SubCraft** ou pelo `mod_codes/black_texture_tool.py`
+  também saem como `.db`: mesmo caminho do jogo, mesmo esquema.
+- O **loader** que vem nas ferramentas (o fork do loader do Spark198rus com clima,
+  armory, pontuação, etc.) **não** é usado junto com o ModLoader: os dois são o
+  mesmo `blackrt.dll` e só um pode ficar na pasta do port. Fique com o `blackrt.dll`
+  do ModLoader — os mods de arquivo (`.db`, texturas, vídeos, textos) continuam
+  valendo normalmente.
+
 ## ModKit e pacote `.bmod`
 
 O **ModKit** (`modkit`) é o gerenciador de mods do kit. Ele não faz parte do
