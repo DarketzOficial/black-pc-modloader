@@ -35,10 +35,10 @@ mod de exemplo e o fluxo de envio da comunidade.
 
    | Asset | Quando usar |
    |---|---|
-   | `BLACK-PC-Modloader-1.4.23-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
-   | `BLACK-PC-Modloader-1.4.23.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
-   | `BLACK-PC-Modloader-1.4.23-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
-   | `BLACK-PC-Modloader-1.4.23-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
+   | `BLACK-PC-Modloader-1.4.24-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
+   | `BLACK-PC-Modloader-1.4.24.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
+   | `BLACK-PC-Modloader-1.4.24-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
+   | `BLACK-PC-Modloader-1.4.24-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
    | `BLACK-PC-ModKit-1.0.0.zip` | Kit de desenvolvimento com o `blackmodkit.exe` pronto para usar. Não é necessário para jogar. |
 
    Os nomes dos pacotes do ModLoader mudam conforme a versão. Use sempre os
@@ -66,7 +66,7 @@ O jogo e o `blackrt.dll` são Win32 e rodam pelo **Wine** com suporte 32 bits.
 
 1. Instale o `wine` com suporte a 32 bits, porque o port é Win32:
    `sudo apt install wine wine32` (Debian/Ubuntu) ou `sudo dnf install wine` (Fedora).
-2. Extraia `BLACK-PC-Modloader-1.4.23-linux-com-mods.zip` (ou o `-linux.zip`) na
+2. Extraia `BLACK-PC-Modloader-1.4.24-linux-com-mods.zip` (ou o `-linux.zip`) na
    pasta do port (a que tem `black.exe`), confirmando a substituição do `blackrt.dll`.
 3. Rode `bash run-blacklauncher.sh` (o script passa a pasta do port ao launcher).
 4. Ajuste o que quiser e clique em **JOGAR**; o jogo abre pelo Wine.
@@ -86,7 +86,7 @@ O `LEIA-ME-LINUX.txt` do pacote explica cada opção (incluindo criar um prefixo
 32 bits com `WINEARCH=win32`). O som do launcher usa `mpv` ou `ffplay`, quando
 existirem; sem eles o launcher fica mudo e nada mais muda.
 
-O ModLoader 1.4.23 é compatível com o **BLACK PC port 0.3.0** (e com o 0.2.1):
+O ModLoader 1.4.24 é compatível com o **BLACK PC port 0.3.0** (e com o 0.2.1):
 as opções novas do port 0.3.0 aparecem no launcher e as opções antigas continuam
 exatamente iguais.
 
