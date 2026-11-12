@@ -1,4 +1,4 @@
-BLACK PC - MOD LOADER 1.4.26 - LINUX
+BLACK PC - MOD LOADER 1.4.27 - LINUX
 ====================================
 
 Launcher nativo para Linux do ModLoader do BLACK PC port (Spark198rus).
