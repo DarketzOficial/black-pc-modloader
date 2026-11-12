@@ -120,6 +120,27 @@ Regras:
   do ModLoader — os mods de arquivo (`.db`, texturas, vídeos, textos) continuam
   valendo normalmente.
 
+## BLACK Reloaded Mod (kROM3r) — add-on de terceiros
+
+O [BLACK Reloaded Mod](https://github.com/kROM3r/BLACKReloadedMod) é um add-on **separado** (não é um mod de
+pasta): são 29 mods numa `winmm.dll` de código fechado, feita para o port do Spark198. Ele não entra na pasta
+`mods\`; a instalação é copiar a `winmm.dll` do pacote do autor para a pasta do `black.exe` (sem trocar o
+`blackrt.dll` do ModLoader) e abrir o jogo.
+
+O que funciona junto com o ModLoader (testado): os mods de jogo — pulo, corrida com fôlego, noclip, câmera
+livre, tecla do HUD, terceira pessoa com corpo, mira moderna, trapaças, armas de ouro, multiplicador de
+inimigos, modo esquadrão, speedrun, dano de queda. As opções são lidas do `black_mods.ini`, que ele cria ao
+lado da `winmm.dll`.
+
+O que não funciona: as **telas** dele. A página MODS da pausa e o modo desafio/Seventh Wave são montados
+sobre as páginas do port **0.2.0** e o menu do ModLoader é diferente; o log dele (`black_mods.log`) registra
+qual página não bateu e desliga a tela correspondente. Por isso o pacote dele não é distribuído aqui: baixe no
+repositório do autor. Se quiser as telas funcionando, o caminho é o autor atualizar o mod para o menu do
+ModLoader (o código é dele).
+
+A licença dele (`LICENSE.txt` no pacote) é de código fechado: pode usar e compartilhar o pacote original, mas
+não vender nem distribuir versões modificadas da `winmm.dll`.
+
 ## ModKit e pacote `.bmod`
 
 O **ModKit** (`modkit`) é o gerenciador de mods do kit. Ele não faz parte do

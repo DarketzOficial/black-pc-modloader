@@ -1,4 +1,4 @@
-BLACK PC - MOD LOADER 1.4.25 - LINUX
+BLACK PC - MOD LOADER 1.4.26 - LINUX
 ====================================
 
 Launcher nativo para Linux do ModLoader do BLACK PC port (Spark198rus).
@@ -45,6 +45,10 @@ O launcher encontra o port pela pasta onde ele esta ("--port" ja vai no script).
 
 O QUE ELE FAZ
 -------------
+- add-on de terceiros BLACK Reloaded Mod (kROM3r,
+  https://github.com/kROM3r/BLACKReloadedMod): copie a winmm.dll do pacote
+  dele para a pasta do black.exe (sem trocar o blackrt.dll); os mods de
+  jogo rodam junto, mas as telas dele sao do menu do port 0.2.0;
 - mods de armas, animacoes e texturas feitos com o Black 2006 Modding tools
   (pedrolZasx, https://github.com/pedrolZasx/Black_2006_Modding_tools): a pasta
   do mod com os .db no caminho do jogo (levels/<fase>/fpguns/<arma>.db); para

@@ -35,10 +35,10 @@ mod de exemplo e o fluxo de envio da comunidade.
 
    | Asset | Quando usar |
    |---|---|
-   | `BLACK-PC-Modloader-1.4.25-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
-   | `BLACK-PC-Modloader-1.4.25.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
-   | `BLACK-PC-Modloader-1.4.25-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
-   | `BLACK-PC-Modloader-1.4.25-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
+   | `BLACK-PC-Modloader-1.4.26-com-mods.zip` | Primeira instalação no Windows. Traz o ModLoader e os mods oficiais (PT-BR, texturas HD, ícones e prompts). |
+   | `BLACK-PC-Modloader-1.4.26.zip` | Windows: pacote pequeno, usado para atualizar um ModLoader que já está instalado. |
+   | `BLACK-PC-Modloader-1.4.26-linux.zip` | Linux: launcher nativo + `blackrt.dll` + `languages`. O jogo roda pelo Wine. |
+   | `BLACK-PC-Modloader-1.4.26-linux-com-mods.zip` | Linux: o mesmo + mods oficiais. |
    | `BLACK-PC-ModKit-1.0.0.zip` | Kit de desenvolvimento com o `blackmodkit.exe` pronto para usar. Não é necessário para jogar. |
 
    Os nomes dos pacotes do ModLoader mudam conforme a versão. Use sempre os
@@ -66,7 +66,7 @@ O jogo e o `blackrt.dll` são Win32 e rodam pelo **Wine** com suporte 32 bits.
 
 1. Instale o `wine` com suporte a 32 bits, porque o port é Win32:
    `sudo apt install wine wine32` (Debian/Ubuntu) ou `sudo dnf install wine` (Fedora).
-2. Extraia `BLACK-PC-Modloader-1.4.25-linux-com-mods.zip` (ou o `-linux.zip`) na
+2. Extraia `BLACK-PC-Modloader-1.4.26-linux-com-mods.zip` (ou o `-linux.zip`) na
    pasta do port (a que tem `black.exe`), confirmando a substituição do `blackrt.dll`.
 3. Rode `bash run-blacklauncher.sh` (o script passa a pasta do port ao launcher).
 4. Ajuste o que quiser e clique em **JOGAR**; o jogo abre pelo Wine.
@@ -86,7 +86,7 @@ O `LEIA-ME-LINUX.txt` do pacote explica cada opção (incluindo criar um prefixo
 32 bits com `WINEARCH=win32`). O som do launcher usa `mpv` ou `ffplay`, quando
 existirem; sem eles o launcher fica mudo e nada mais muda.
 
-O ModLoader 1.4.25 é compatível com o **BLACK PC port 0.3.0** (e com o 0.2.1):
+O ModLoader 1.4.26 é compatível com o **BLACK PC port 0.3.0** (e com o 0.2.1):
 as opções novas do port 0.3.0 aparecem no launcher e as opções antigas continuam
 exatamente iguais.
 
@@ -380,11 +380,29 @@ jogo; você precisa ter o BLACK original e uma instalação do port para testar.
   ficar na pasta.
 - **SubCraft** (fork com leitura de `.db`, edição de textura) — no mesmo repositório.
 
+### BLACK Reloaded Mod (kROM3r)
+
+Add-on independente e de **código fechado**: **29 mods numa `winmm.dll`**, feita para o port do Spark198
+([kROM3r/BLACKReloadedMod](https://github.com/kROM3r/BLACKReloadedMod)). Traz pulo, corrida com fôlego,
+noclip, câmera livre, terceira pessoa com corpo, mira moderna, armas de ouro, multiplicador de inimigos,
+modo esquadrão, speedrun, o modo desafio que foi cortado do jogo e a dificuldade **Seventh Wave**.
+
+Instalar: copie a `winmm.dll` do pacote dele para a pasta do `black.exe` (não troque o `blackrt.dll`).
+O launcher mostra em **AVANÇADO** quando a `winmm.dll` está instalada.
+
+Como funciona com o ModLoader: os **mods de jogo** rodam junto (testado: barra de fôlego, terceira pessoa
+com corpo, câmera livre, HUD) e as opções dele ficam no `black_mods.ini`. As **telas** dele (a página MODS
+da pausa e o modo desafio) foram montadas sobre o menu do port **0.2.0**; o menu do ModLoader é outro, então
+essas telas ficam de fora neste build (o log dele avisa qual página não bateu). O pacote dele **não** é
+distribuído aqui: baixe no repositório do autor, que é o dono do mod.
+
+
 ### Créditos
 
 - **Spark198rus** — BLACK PC port.
 - **DarketzOficial** — ModLoader, launcher e kit de mods.
 - **MrGeeH** — dublagem PT-BR (áudio do jogo): https://github.com/MrGeeH
 - **pedrolZasx** — Black 2006 Modding tools (armas, animações, texturas, clima): https://github.com/pedrolZasx/Black_2006_Modding_tools
+- **kROM3r** — BLACK Reloaded Mod (29 mods numa `winmm.dll`): https://github.com/kROM3r/BLACKReloadedMod
 - **Sol Diego** — pacotes de idioma (texto, fontes e legendas): https://github.com/soldieg
 - Comunidade de mods do BLACK PC.
